@@ -25,6 +25,9 @@ export default function Home() {
                             style={{ width: 100, height: 100 }}
                         />
                     )}
+
+                    <Text>AI Score: {item.aiScore || 0}</Text>
+                    <Text>Final: {item.finalStatus || item.status}</Text>
                 </View>
             ))}
         </View>

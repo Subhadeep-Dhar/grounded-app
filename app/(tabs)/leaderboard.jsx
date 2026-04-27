@@ -15,7 +15,7 @@ export default function Leaderboard() {
 
       {users.map((u, i) => (
         <Text key={i}>
-          {i + 1}. {u.email} - {u.totalCompletions}
+          {i + 1}. {u.email} | Score: {u.trustScore} | Streak: {u.streakCount}
         </Text>
       ))}
     </View>

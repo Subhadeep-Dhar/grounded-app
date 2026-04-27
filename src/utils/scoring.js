@@ -5,5 +5,5 @@ export const calculateScore = ({ timeOk, locationOk, hasMedia }) => {
   if (locationOk) score += 35;
   if (hasMedia) score += 40;
 
-  return score; // out of 100
+  return score;
 };
