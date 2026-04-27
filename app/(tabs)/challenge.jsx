@@ -10,6 +10,7 @@ import { uploadImage } from '../../src/services/storage';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../src/lib/firebase';
 import { startSession, markArrived, markCompleted } from '../../src/services/session';
+import { sendArrivalNotification, sendCompletionNotification } from '../../src/services/notifications';
 
 export default function Challenge() {
     const { user } = useAuthStore();
@@ -18,10 +19,11 @@ export default function Challenge() {
     const [submitted, setSubmitted] = useState(false);
     const [session, setSession] = useState(null);
     const [remainingTime, setRemainingTime] = useState(0);
+    const [distance, setDistance] = useState(null);
 
     // 🔥 Stay timer
     useEffect(() => {
-        if (!session || session.status !== "ARRIVED") return;
+        if (!session || session.status !== "ARRIVED" || !session.arrivedAt) return;
 
         const interval = setInterval(() => {
             const now = Date.now();
@@ -59,51 +61,43 @@ export default function Challenge() {
 
     // 🔥 Auto geofence tracking
     useEffect(() => {
-        if (!session || session.status !== "STARTED" || !challenge) return;
+        if (!session || session.status !== "STARTED" || !challenge?.latitude) return;
 
         let subscription;
 
         const startTracking = async () => {
-            subscription = await watchUserLocation(async (loc) => {
-                const lat1 = loc.coords.latitude;
-                const lon1 = loc.coords.longitude;
+            try {
+                subscription = await watchUserLocation(async (loc) => {
+                    const lat1 = loc.coords.latitude;
+                    const lon1 = loc.coords.longitude;
 
-                const lat2 = challenge.latitude;
-                const lon2 = challenge.longitude;
+                    const lat2 = challenge.latitude;
+                    const lon2 = challenge.longitude;
 
-                const dist = getDistance(lat1, lon1, lat2, lon2);
+                    const dist = getDistance(lat1, lon1, lat2, lon2);
+                    setDistance(dist);
 
-                if (dist <= challenge.radius) {
-                    await markArrived(user.uid, challenge.date);
+                    // 🔥 ARRIVAL DETECTION (clean)
+                    if (dist <= challenge.radius) {
+                        await markArrived(user.uid, challenge.date);
 
-                    setSession((prev) => ({
-                        ...prev,
-                        status: "ARRIVED",
-                        arrivedAt: Date.now()
-                    }));
+                        setSession((prev) => ({
+                            ...prev,
+                            status: "ARRIVED",
+                            arrivedAt: Date.now()
+                        }));
 
-                    alert("🎉 You reached the location!");
+                        await sendArrivalNotification();
+                        alert("🎉 You reached the location!");
 
-                    // 🔥 STOP tracking safely
-                    if (subscription && typeof subscription.remove === 'function') {
-                        subscription.remove();
+                        if (subscription && typeof subscription.remove === 'function') {
+                            subscription.remove();
+                        }
                     }
-                }
-
-                if (dist <= challenge.radius) {
-                    await markArrived(user.uid, challenge.date);
-
-                    setSession((prev) => ({
-                        ...prev,
-                        status: "ARRIVED",
-                        arrivedAt: Date.now()
-                    }));
-
-                    alert("🎉 You reached the location!");
-
-                    subscription.remove();
-                }
-            });
+                });
+            } catch (e) {
+                console.log("Tracking error:", e);
+            }
         };
 
         startTracking();
@@ -132,7 +126,7 @@ export default function Challenge() {
                 return;
             }
 
-            // 🔥 Stay validation (UPDATED)
+            // 🔥 Stay validation
             if (session.status === "ARRIVED") {
                 if (remainingTime > 0) {
                     alert(`Wait ${Math.ceil(remainingTime / 1000)} sec ⏳`);
@@ -183,6 +177,8 @@ export default function Challenge() {
             setSubmitted(true);
             alert("Submitted ✅");
 
+            await sendCompletionNotification();
+
         } catch (e) {
             alert(e.message);
         }
@@ -195,6 +191,15 @@ export default function Challenge() {
             <Text>Today's Challenge</Text>
             <Text>{challenge.task}</Text>
             <Text>{challenge.location}</Text>
+
+            {/* 🔥 Distance UI */}
+            {distance !== null && session?.status === "STARTED" && (
+                <Text>
+                    {distance > 200 && `🚶 ${Math.round(distance)}m away`}
+                    {distance <= 200 && distance > 50 && `🔥 Almost there (${Math.round(distance)}m)`}
+                    {distance <= 50 && `🎯 You're very close!`}
+                </Text>
+            )}
 
             {/* 🔥 Start Session */}
             {!session && (
@@ -220,7 +225,7 @@ export default function Challenge() {
             <Button
                 title={submitted ? "Already Submitted" : "Submit"}
                 onPress={handleSubmit}
-                disabled={submitted}
+                disabled={submitted || session?.status !== "COMPLETED"}
             />
         </View>
     );
