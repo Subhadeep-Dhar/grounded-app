@@ -5,24 +5,29 @@ import { db } from '../../src/lib/firebase';
 import { useAuthStore } from '../../src/store/authStore';
 
 export default function Profile() {
-  const { user } = useAuthStore();
-  const [data, setData] = useState(null);
+    const { user } = useAuthStore();
+    const [data, setData] = useState(null);
 
-  useEffect(() => {
-    if (user) {
-      getDoc(doc(db, 'users', user.uid)).then(snap =>
-        setData(snap.data())
-      );
-    }
-  }, [user]);
+    useEffect(() => {
+        if (user) {
+            getDoc(doc(db, 'users', user.uid)).then(snap =>
+                setData(snap.data())
+            );
+        }
+    }, [user]);
 
-  if (!data) return <Text>Loading...</Text>;
+    if (!data) return <Text>Loading...</Text>;
 
-  return (
-    <View>
-      <Text>Email: {data.email}</Text>
-      <Text>Streak: {data.streakCount}</Text>
-      <Text>Total: {data.totalCompletions}</Text>
-    </View>
-  );
+    return (
+        <View>
+            <Text>Email: {data.email}</Text>
+            <Text>Streak: {data.streakCount}</Text>
+            <Text>Total: {data.totalCompletions}</Text>
+            <Text>Badges:</Text>
+
+            {data.badges?.map((b, i) => (
+                <Text key={i}>🏅 {b}</Text>
+            ))}
+        </View>
+    );
 }

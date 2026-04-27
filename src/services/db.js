@@ -11,6 +11,7 @@ export const createUserDoc = async (user) => {
         totalCompletions: 0,
         trustScore: 50,
         lastCompletedDate: null,
+        badges: [],
         createdAt: Date.now()
     });
 };
