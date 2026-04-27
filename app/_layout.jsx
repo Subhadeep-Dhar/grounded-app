@@ -1,7 +1,7 @@
-import { Stack } from 'expo-router';
-import { useEffect } from 'react';
-import { useAuthStore } from '../src/store/authStore';
-import { requestPermission, scheduleReminder } from '../src/services/notifications';
+// import { Stack } from 'expo-router';
+// import { useEffect } from 'react';
+// import { useAuthStore } from '../src/store/authStore';
+// import { requestPermission, scheduleReminder } from '../src/services/notifications';
 
 import { Stack } from 'expo-router';
 import { useEffect } from 'react';
