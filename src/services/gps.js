@@ -11,3 +11,17 @@ export const getCurrentLocation = async () => {
     accuracy: loc.coords.accuracy
   };
 };
+
+export const watchUserLocation = async (callback) => {
+  const { status } = await Location.requestForegroundPermissionsAsync();
+  if (status !== 'granted') return;
+
+  return Location.watchPositionAsync(
+    {
+      accuracy: Location.Accuracy.High,
+      timeInterval: 5000, // every 5 sec
+      distanceInterval: 5, // or movement
+    },
+    callback
+  );
+};
