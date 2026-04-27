@@ -1,9 +1,13 @@
 import { db } from '../lib/firebase';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
+import { TASKS, LOCATIONS } from '../constants/config';
 
 export const getTodayChallenge = async (userId) => {
     const today = new Date().toDateString();
     const ref = doc(db, 'challenges', `${userId}_${today}`);
+
+    const randomTask = TASKS[Math.floor(Math.random() * TASKS.length)];
+    const randomLocation = LOCATIONS[Math.floor(Math.random() * LOCATIONS.length)];
 
     const snap = await getDoc(ref);
 
@@ -12,11 +16,11 @@ export const getTodayChallenge = async (userId) => {
     const challenge = {
         userId,
         date: today,
-        task: "Do 10 pushups",
-        location: "Football Ground",
-        latitude: 13.34656044444444,
-        longitude: 74.79371888888889,
-        radius: 200, // meters
+        task: randomTask,
+        location: randomLocation.name,
+        latitude: randomLocation.latitude,
+        longitude: randomLocation.longitude,
+        radius: randomLocation.radius,
         status: "pending"
     };
 

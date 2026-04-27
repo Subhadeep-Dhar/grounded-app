@@ -10,6 +10,7 @@ export const createUserDoc = async (user) => {
     streakCount: 0,
     totalCompletions: 0,
     trustScore: 50,
+    lastCompletedDate: null,
     createdAt: Date.now()
   });
 };
