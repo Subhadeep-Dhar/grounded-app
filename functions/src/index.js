@@ -1,8 +1,11 @@
 const { onDocumentCreated } = require("firebase-functions/v2/firestore");
+const { onSchedule } = require("firebase-functions/v2/scheduler");
 const admin = require("firebase-admin");
 
 admin.initializeApp();
+const db = admin.firestore(); // ✅ GLOBAL
 
+// 🔥 Submission trigger
 exports.onSubmissionCreate = onDocumentCreated(
     {
         document: "submissions/{id}",
@@ -12,7 +15,7 @@ exports.onSubmissionCreate = onDocumentCreated(
         const data = event.data.data();
         const ref = event.data.ref;
 
-        const userRef = admin.firestore().collection("users").doc(data.userId);
+        const userRef = db.collection("users").doc(data.userId);
         const userSnap = await userRef.get();
         const user = userSnap.data();
 
@@ -33,7 +36,7 @@ exports.onSubmissionCreate = onDocumentCreated(
                 aiScore >= 40 ? "flagged" :
                     "rejected";
 
-        // 🔥 NEW UPDATED VALUES (important fix)
+        // 🔥 Updated values
         const newTrust = Math.max(
             0,
             Math.min(100, (user.trustScore || 50) + trustDelta)
@@ -42,7 +45,6 @@ exports.onSubmissionCreate = onDocumentCreated(
         const newStreak = user.streakCount || 0;
         const newTotal = user.totalCompletions || 0;
 
-        // 🔥 Badge logic (based on UPDATED values)
         let badges = user.badges || [];
 
         if (newStreak >= 3 && !badges.includes("3_day_streak")) {
@@ -74,5 +76,34 @@ exports.onSubmissionCreate = onDocumentCreated(
         });
 
         console.log("Processed submission:", ref.id);
+    }
+);
+
+// 🔥 Scheduled job (miss detection)
+exports.markMissedUsers = onSchedule(
+    {
+        schedule: "30 7 * * *",
+        timeZone: "Asia/Kolkata",
+    },
+    async () => {
+        const today = new Date().toDateString();
+
+        const usersSnap = await db.collection("users").get();
+
+        for (const doc of usersSnap.docs) {
+            const user = doc.data();
+
+            if (user.lastCompletedDate === today) continue;
+            if (user.lastMissedDate === today) continue;
+
+            await db.collection("users").doc(doc.id).update({
+                lastMissedDate: today,
+                canRecover: true
+            });
+
+            console.log(`User missed: ${doc.id}`);
+        }
+
+        console.log("Miss detection completed");
     }
 );

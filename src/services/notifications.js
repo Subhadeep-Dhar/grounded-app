@@ -1,23 +1,24 @@
+import { Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
 
 export const requestPermission = async () => {
+    if (Platform.OS === 'web') return false; // 🔥 prevent crash
+
     const { status } = await Notifications.requestPermissionsAsync();
     return status === 'granted';
 };
 
 export const scheduleReminder = async () => {
-    const windowStartHour = 5;
-    const notifyHour = 4;
-    const notifyMinute = 45;
+    if (Platform.OS === 'web') return; // 🔥 prevent crash
 
     await Notifications.scheduleNotificationAsync({
         content: {
-            title: "🔥 Challenge Starting Soon",
-            body: "Your challenge starts in 15 minutes. Get ready!",
+            title: "Wake up!",
+            body: "Your challenge starts soon 🚀",
         },
         trigger: {
-            hour: notifyHour,
-            minute: notifyMinute,
+            hour: 4,
+            minute: 45,
             repeats: true,
         },
     });
