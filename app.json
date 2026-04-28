@@ -7,27 +7,81 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
+    "scheme": "grounded",
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#10B981"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.grounded.app",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Grounded needs your location to verify you're at the challenge location.",
+        "NSCameraUsageDescription": "Grounded needs camera access to capture proof of your challenge completion.",
+        "NSPhotoLibraryUsageDescription": "Grounded needs photo library access to save your challenge photos."
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "backgroundColor": "#10B981"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "package": "com.grounded.app",
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
+        "RECEIVE_BOOT_COMPLETED",
+        "VIBRATE",
+        "SCHEDULE_EXACT_ALARM"
+      ]
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
     },
     "plugins": [
       "expo-router",
-      "expo-secure-store"
-    ]
+      "expo-secure-store",
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Grounded needs your location to verify you're at the challenge location."
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Grounded needs camera access to capture proof of your challenge completion."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Grounded needs photo library access to save your challenge photos.",
+          "cameraPermission": "Grounded needs camera access to capture proof of your challenge completion."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#10B981",
+          "sounds": []
+        }
+      ]
+    ],
+    "extra": {
+      "router": {
+        "origin": false
+      },
+      "eas": {
+        "projectId": "grounded-app"
+      }
+    }
   }
 }
