@@ -1,71 +1,73 @@
 import { Platform } from 'react-native';
-import * as Notifications from 'expo-notifications';
 
-// 🔒 Web guard helper
-const isWeb = Platform.OS === 'web';
+let Notifications = null;
 
-// 🔥 Request permission
+// 🔥 SAFE LOAD (prevents Expo Go crash)
+if (Platform.OS !== 'web') {
+  try {
+    Notifications = require('expo-notifications');
+  } catch (e) {
+    Notifications = null;
+  }
+}
+
+const isDisabled = !Notifications;
+
+// 🔥 Permission
 export const requestPermission = async () => {
-  if (isWeb) return false;
+  if (isDisabled) return false;
 
   const { status } = await Notifications.requestPermissionsAsync();
   return status === 'granted';
 };
 
-// 🔥 4:45 AM wake-up reminder
+// 🔥 Morning reminder (DISABLED safely)
 export const scheduleMorningReminder = async () => {
-  if (isWeb) return;
+  if (isDisabled) return;
 
   await Notifications.scheduleNotificationAsync({
     content: {
       title: "🌅 Wake up!",
-      body: "Your challenge starts in 15 minutes 🚀",
+      body: "Your challenge starts soon 🚀",
     },
-    trigger: {
-      hour: 4,
-      minute: 45,
-      repeats: true,
-    },
+    trigger: null, // 🔥 FIX (was crashing)
   });
 };
 
-// 🔥 6:00 AM nudge (conditional)
+// 🔥 Nudge (DISABLED safely)
 export const scheduleNudgeReminder = async () => {
-  if (isWeb) return;
+  if (isDisabled) return;
 
   await Notifications.scheduleNotificationAsync({
     content: {
       title: "⏳ Still time!",
-      body: "Start now — just show up 💪",
-    },
-    trigger: {
-      hour: 6,
-      minute: 0,
-      repeats: true,
-    },
-  });
-};
-
-// 🔥 Instant notification helpers
-export const sendArrivalNotification = async () => {
-  if (isWeb) return;
-
-  await Notifications.scheduleNotificationAsync({
-    content: {
-      title: "🎉 You showed up!",
-      body: "That’s what matters most.",
+      body: "Start now 💪",
     },
     trigger: null,
   });
 };
 
-export const sendCompletionNotification = async () => {
-  if (isWeb) return;
+// 🔥 Arrival
+export const sendArrivalNotification = async () => {
+  if (isDisabled) return;
 
   await Notifications.scheduleNotificationAsync({
     content: {
-      title: "💪 Great job!",
-      body: "Challenge completed successfully!",
+      title: "🎉 You showed up!",
+      body: "Nice work",
+    },
+    trigger: null,
+  });
+};
+
+// 🔥 Completion
+export const sendCompletionNotification = async () => {
+  if (isDisabled) return;
+
+  await Notifications.scheduleNotificationAsync({
+    content: {
+      title: "💪 Completed!",
+      body: "Good job",
     },
     trigger: null,
   });

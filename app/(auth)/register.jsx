@@ -48,6 +48,7 @@ export default function Register() {
     try {
       await register(email, password);
       Alert.alert('Success', 'Account created! Welcome to Grounded.');
+      router.replace('/(tabs)/home');
     } catch (error) {
       let message = 'Registration failed. Please try again.';
       if (error.code === 'auth/email-already-in-use') {

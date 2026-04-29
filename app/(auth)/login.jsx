@@ -42,6 +42,7 @@ export default function Login() {
     setLoading(true);
     try {
       await login(email, password);
+      router.replace('/(tabs)/home');
     } catch (error) {
       let message = 'Login failed. Please try again.';
       if (error.code === 'auth/invalid-email') {
