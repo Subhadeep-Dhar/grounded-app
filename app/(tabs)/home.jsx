@@ -13,6 +13,9 @@ import { useRouter } from 'expo-router';
 import { useAuthStore } from '../../src/store/authStore';
 import { getUserDoc } from '../../src/services/db';
 import { getTodayChallenge } from '../../src/services/challenge';
+import { getRandomQuote } from '../../src/constants/messages';
+import { BADGES } from '../../src/constants/config';
+import { COLORS, FONT, SPACING, RADIUS, SHADOW } from '../../src/constants/theme';
 
 export default function Home() {
   const router = useRouter();
@@ -21,10 +24,10 @@ export default function Home() {
   const [challenge, setChallenge] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [quote, setQuote] = useState(getRandomQuote());
 
   const fetchData = useCallback(async () => {
     if (!user) return;
-    
     try {
       const [userDoc, todayChallenge] = await Promise.all([
         getUserDoc(user.uid),
@@ -46,18 +49,20 @@ export default function Home() {
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
+    setQuote(getRandomQuote());
     fetchData();
   }, [fetchData]);
 
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#10B981" />
+        <ActivityIndicator size="large" color={COLORS.accent} />
         <Text style={styles.loadingText}>Loading...</Text>
       </View>
     );
   }
 
+  const earnedBadges = BADGES.filter(b => b.check(userData || {}));
   const isWeb = Platform.OS === 'web';
 
   return (
@@ -68,25 +73,25 @@ export default function Home() {
         <RefreshControl
           refreshing={refreshing}
           onRefresh={onRefresh}
-          colors={['#10B981']}
+          tintColor={COLORS.accent}
+          colors={[COLORS.accent]}
         />
       }
+      showsVerticalScrollIndicator={false}
     >
       {/* Header */}
       <View style={styles.header}>
         <View>
-          <Text style={styles.greeting}>
-            {getGreeting()}
-          </Text>
-          <Text style={styles.subGreeting}>
-            Ready for today's challenge?
-          </Text>
+          <Text style={styles.greeting}>{getGreeting()}</Text>
+          <Text style={styles.subGreeting}>{quote}</Text>
         </View>
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.profileButton}
           onPress={() => router.push('/(tabs)/profile')}
         >
-          <Text style={styles.profileEmoji}>👤</Text>
+          <Text style={styles.profileText}>
+            {user?.email?.charAt(0).toUpperCase() || '?'}
+          </Text>
         </TouchableOpacity>
       </View>
 
@@ -94,24 +99,27 @@ export default function Home() {
       <TouchableOpacity
         style={styles.challengeCard}
         onPress={() => router.push('/(tabs)/challenge')}
-        activeOpacity={0.8}
+        activeOpacity={0.85}
       >
         <View style={styles.challengeHeader}>
-          <Text style={styles.challengeLabel}>Today's Challenge</Text>
+          <Text style={styles.challengeLabel}>TODAY'S CHALLENGE</Text>
           <View style={[
             styles.statusBadge,
             challenge?.status === 'completed' && styles.statusCompleted
           ]}>
-            <Text style={styles.statusText}>
+            <Text style={[
+              styles.statusText,
+              challenge?.status === 'completed' && styles.statusTextCompleted
+            ]}>
               {challenge?.status === 'completed' ? '✓ Done' : '→ Start'}
             </Text>
           </View>
         </View>
-        
+
         <Text style={styles.challengeTask}>
           {challenge?.task || 'Loading...'}
         </Text>
-        
+
         <View style={styles.challengeLocation}>
           <Text style={styles.locationIcon}>📍</Text>
           <Text style={styles.locationText}>
@@ -128,49 +136,67 @@ export default function Home() {
 
       {/* Stats Grid */}
       <View style={styles.statsGrid}>
-        <View style={styles.statCard}>
+        <View style={[styles.statCard, styles.statCardStreak]}>
           <Text style={styles.statEmoji}>🔥</Text>
           <Text style={styles.statValue}>{userData?.streakCount || 0}</Text>
           <Text style={styles.statLabel}>Day Streak</Text>
         </View>
-        
+
         <View style={styles.statCard}>
           <Text style={styles.statEmoji}>⭐</Text>
           <Text style={styles.statValue}>{userData?.trustScore || 50}</Text>
           <Text style={styles.statLabel}>Trust Score</Text>
         </View>
-        
+
         <View style={styles.statCard}>
           <Text style={styles.statEmoji}>🏆</Text>
           <Text style={styles.statValue}>{userData?.totalCompletions || 0}</Text>
-          <Text style={styles.statLabel}>Completions</Text>
+          <Text style={styles.statLabel}>Completed</Text>
         </View>
+      </View>
+
+      {/* Trust Score Bar */}
+      <View style={styles.trustCard}>
+        <View style={styles.trustHeader}>
+          <Text style={styles.trustTitle}>Trust Score</Text>
+          <Text style={styles.trustValue}>{userData?.trustScore || 50}/100</Text>
+        </View>
+        <View style={styles.trustBarBg}>
+          <View
+            style={[
+              styles.trustBarFill,
+              { width: `${Math.min(userData?.trustScore || 50, 100)}%` }
+            ]}
+          />
+        </View>
+        <Text style={styles.trustHint}>
+          {(userData?.trustScore || 50) >= 80 ? 'Excellent standing!' :
+           (userData?.trustScore || 50) >= 60 ? 'Good progress — keep showing up.' :
+           'Show up daily to build trust.'}
+        </Text>
       </View>
 
       {/* Badges Section */}
       <View style={styles.badgesSection}>
-        <Text style={styles.sectionTitle}>Your Badges</Text>
+        <Text style={styles.sectionTitle}>Badges</Text>
         <View style={styles.badgesGrid}>
-          <Badge 
-            emoji="🌅" 
-            name="Early Bird" 
-            earned={userData?.streakCount >= 3} 
-          />
-          <Badge 
-            emoji="💪" 
-            name="Consistent" 
-            earned={userData?.streakCount >= 7} 
-          />
-          <Badge 
-            emoji="🎯" 
-            name="First Step" 
-            earned={userData?.totalCompletions >= 5} 
-          />
-          <Badge 
-            emoji="⭐" 
-            name="Trusted" 
-            earned={userData?.trustScore >= 80} 
-          />
+          {BADGES.map(badge => {
+            const earned = badge.check(userData || {});
+            return (
+              <View key={badge.id} style={[styles.badge, !earned && styles.badgeLocked]}>
+                <Text style={styles.badgeEmoji}>{badge.emoji}</Text>
+                <Text style={[styles.badgeName, !earned && styles.badgeNameLocked]}>
+                  {badge.name}
+                </Text>
+                <Text style={[styles.badgeDesc, !earned && styles.badgeDescLocked]}>
+                  {badge.desc}
+                </Text>
+                {earned && (
+                  <View style={styles.earnedDot} />
+                )}
+              </View>
+            );
+          })}
         </View>
       </View>
 
@@ -178,7 +204,7 @@ export default function Home() {
       {isWeb && (
         <View style={styles.webWarning}>
           <Text style={styles.webWarningText}>
-            ⚠️ For full features, open on mobile (GPS, Camera, Maps)
+            ⚠️ For full features (GPS, Camera, Maps), open on mobile
           </Text>
         </View>
       )}
@@ -193,219 +219,282 @@ function getGreeting() {
   return 'Good evening';
 }
 
-function Badge({ emoji, name, earned }) {
-  return (
-    <View style={[styles.badge, !earned && styles.badgeLocked]}>
-      <Text style={styles.badgeEmoji}>{emoji}</Text>
-      <Text style={[styles.badgeName, !earned && styles.badgeNameLocked]}>
-        {name}
-      </Text>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F9FAFB',
+    backgroundColor: COLORS.bg,
   },
   content: {
-    padding: 20,
-    paddingBottom: 40,
+    padding: SPACING.xl,
+    paddingTop: Platform.OS === 'ios' ? 60 : 48,
+    paddingBottom: SPACING.section,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#F9FAFB',
+    backgroundColor: COLORS.bg,
   },
   loadingText: {
-    marginTop: 12,
-    color: '#6B7280',
-    fontSize: 16,
+    marginTop: SPACING.md,
+    color: COLORS.textSecondary,
+    fontSize: FONT.md,
   },
+
+  // Header
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 24,
+    marginBottom: SPACING.xxl,
   },
   greeting: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: '#111827',
+    fontSize: FONT.xxl,
+    fontWeight: FONT.bold,
+    color: COLORS.textPrimary,
   },
   subGreeting: {
-    fontSize: 16,
-    color: '#6B7280',
-    marginTop: 4,
+    fontSize: FONT.sm,
+    color: COLORS.textSecondary,
+    marginTop: SPACING.xs,
+    maxWidth: 260,
+    fontStyle: 'italic',
   },
   profileButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#E5E7EB',
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: COLORS.accentGlow,
+    borderWidth: 1.5,
+    borderColor: COLORS.accentBorder,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  profileEmoji: {
-    fontSize: 24,
+  profileText: {
+    fontSize: FONT.lg,
+    fontWeight: FONT.bold,
+    color: COLORS.accent,
   },
+
+  // Challenge Card
   challengeCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
+    backgroundColor: COLORS.bgCard,
+    borderRadius: RADIUS.lg,
+    padding: SPACING.xl,
+    marginBottom: SPACING.xl,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    ...SHADOW.card,
   },
   challengeHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: SPACING.md,
   },
   challengeLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#10B981',
-    textTransform: 'uppercase',
+    fontSize: FONT.xs,
+    fontWeight: FONT.bold,
+    color: COLORS.accent,
+    letterSpacing: 1,
   },
   statusBadge: {
-    backgroundColor: '#FEF3C7',
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 12,
+    backgroundColor: COLORS.warningBg,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.xs,
+    borderRadius: RADIUS.round,
   },
   statusCompleted: {
-    backgroundColor: '#D1FAE5',
+    backgroundColor: COLORS.accentGlow,
   },
   statusText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#92400E',
+    fontSize: FONT.xs,
+    fontWeight: FONT.semibold,
+    color: COLORS.warning,
+  },
+  statusTextCompleted: {
+    color: COLORS.accent,
   },
   challengeTask: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: '#111827',
-    marginBottom: 12,
+    fontSize: FONT.xl,
+    fontWeight: FONT.bold,
+    color: COLORS.textPrimary,
+    marginBottom: SPACING.md,
   },
   challengeLocation: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   locationIcon: {
-    fontSize: 16,
-    marginRight: 6,
+    fontSize: 14,
+    marginRight: SPACING.sm,
   },
   locationText: {
-    fontSize: 14,
-    color: '#6B7280',
+    fontSize: FONT.sm,
+    color: COLORS.textSecondary,
   },
   startButton: {
-    backgroundColor: '#10B981',
-    borderRadius: 12,
-    padding: 16,
+    backgroundColor: COLORS.accent,
+    borderRadius: RADIUS.md,
+    padding: SPACING.lg,
     alignItems: 'center',
-    marginTop: 16,
+    marginTop: SPACING.lg,
+    ...SHADOW.glow,
   },
   startButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
+    color: COLORS.textPrimary,
+    fontSize: FONT.md,
+    fontWeight: FONT.bold,
   },
+
+  // Stats Grid
   statsGrid: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 20,
+    gap: SPACING.md,
+    marginBottom: SPACING.xl,
   },
   statCard: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 16,
+    backgroundColor: COLORS.bgCard,
+    borderRadius: RADIUS.lg,
+    padding: SPACING.lg,
     alignItems: 'center',
-    marginHorizontal: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    ...SHADOW.subtle,
+  },
+  statCardStreak: {
+    borderColor: COLORS.accentBorder,
   },
   statEmoji: {
     fontSize: 24,
-    marginBottom: 8,
+    marginBottom: SPACING.sm,
   },
   statValue: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#111827',
+    fontSize: FONT.xxl,
+    fontWeight: FONT.extrabold,
+    color: COLORS.textPrimary,
   },
   statLabel: {
-    fontSize: 12,
-    color: '#6B7280',
-    marginTop: 4,
+    fontSize: FONT.xs,
+    color: COLORS.textMuted,
+    marginTop: SPACING.xs,
   },
+
+  // Trust Score
+  trustCard: {
+    backgroundColor: COLORS.bgCard,
+    borderRadius: RADIUS.lg,
+    padding: SPACING.xl,
+    marginBottom: SPACING.xl,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  trustHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: SPACING.md,
+  },
+  trustTitle: {
+    fontSize: FONT.md,
+    fontWeight: FONT.semibold,
+    color: COLORS.textPrimary,
+  },
+  trustValue: {
+    fontSize: FONT.md,
+    fontWeight: FONT.bold,
+    color: COLORS.accent,
+  },
+  trustBarBg: {
+    height: 8,
+    backgroundColor: COLORS.bgElevated,
+    borderRadius: RADIUS.sm,
+    overflow: 'hidden',
+    marginBottom: SPACING.sm,
+  },
+  trustBarFill: {
+    height: '100%',
+    backgroundColor: COLORS.accent,
+    borderRadius: RADIUS.sm,
+  },
+  trustHint: {
+    fontSize: FONT.xs,
+    color: COLORS.textMuted,
+  },
+
+  // Badges
   badgesSection: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
+    marginBottom: SPACING.xl,
   },
   sectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#111827',
-    marginBottom: 16,
+    fontSize: FONT.lg,
+    fontWeight: FONT.semibold,
+    color: COLORS.textPrimary,
+    marginBottom: SPACING.lg,
   },
   badgesGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    justifyContent: 'space-between',
+    gap: SPACING.md,
   },
   badge: {
-    width: '48%',
-    backgroundColor: '#F9FAFB',
-    borderRadius: 12,
-    padding: 16,
+    width: '47%',
+    backgroundColor: COLORS.bgCard,
+    borderRadius: RADIUS.lg,
+    padding: SPACING.lg,
     alignItems: 'center',
-    marginBottom: 12,
-    borderWidth: 2,
-    borderColor: '#10B981',
+    borderWidth: 1.5,
+    borderColor: COLORS.accentBorder,
+    position: 'relative',
   },
   badgeLocked: {
-    borderColor: '#E5E7EB',
-    opacity: 0.5,
+    borderColor: COLORS.border,
+    opacity: 0.45,
   },
   badgeEmoji: {
-    fontSize: 32,
-    marginBottom: 8,
+    fontSize: 28,
+    marginBottom: SPACING.sm,
   },
   badgeName: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#111827',
+    fontSize: FONT.sm,
+    fontWeight: FONT.semibold,
+    color: COLORS.textPrimary,
+    marginBottom: 2,
   },
   badgeNameLocked: {
-    color: '#9CA3AF',
+    color: COLORS.textMuted,
   },
+  badgeDesc: {
+    fontSize: FONT.xs,
+    color: COLORS.textSecondary,
+    textAlign: 'center',
+  },
+  badgeDescLocked: {
+    color: COLORS.textMuted,
+  },
+  earnedDot: {
+    position: 'absolute',
+    top: SPACING.sm,
+    right: SPACING.sm,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: COLORS.accent,
+    ...SHADOW.glow,
+  },
+
+  // Web Warning
   webWarning: {
-    backgroundColor: '#FEF3C7',
-    borderRadius: 12,
-    padding: 16,
-    marginTop: 20,
+    backgroundColor: COLORS.warningBg,
+    borderRadius: RADIUS.md,
+    padding: SPACING.lg,
+    borderWidth: 1,
+    borderColor: 'rgba(245, 158, 11, 0.3)',
   },
   webWarningText: {
-    fontSize: 14,
-    color: '#92400E',
+    fontSize: FONT.sm,
+    color: COLORS.warning,
     textAlign: 'center',
   },
 });

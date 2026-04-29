@@ -4,14 +4,15 @@ import {
   Text,
   StyleSheet,
   FlatList,
-  RefreshControl,
   Image,
+  RefreshControl,
   ActivityIndicator,
-  TouchableOpacity,
+  Platform,
 } from 'react-native';
 import { getFeed } from '../../src/services/feed';
+import { COLORS, FONT, SPACING, RADIUS, SHADOW } from '../../src/constants/theme';
 
-export default function Leaderboard() {
+export default function Feed() {
   const [submissions, setSubmissions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -39,10 +40,10 @@ export default function Leaderboard() {
 
   const getStatusColor = (status) => {
     switch (status) {
-      case 'approved': return '#10B981';
-      case 'flagged': return '#F59E0B';
-      case 'rejected': return '#EF4444';
-      default: return '#6B7280';
+      case 'approved': return COLORS.success;
+      case 'flagged': return COLORS.warning;
+      case 'rejected': return COLORS.error;
+      default: return COLORS.textMuted;
     }
   };
 
@@ -51,22 +52,27 @@ export default function Leaderboard() {
       case 'approved': return '✅';
       case 'flagged': return '⚠️';
       case 'rejected': return '❌';
-      default: return '❓';
+      default: return '⏳';
     }
   };
 
   const formatDate = (timestamp) => {
     if (!timestamp) return 'Unknown';
     const date = new Date(timestamp);
-    return date.toLocaleDateString('en-US', { 
-      month: 'short', 
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
+    const now = new Date();
+    const diffMs = now - date;
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+
+    if (diffMins < 1) return 'Just now';
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    if (diffDays < 7) return `${diffDays}d ago`;
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   };
 
-  const renderItem = ({ item, index }) => (
+  const renderItem = ({ item }) => (
     <View style={styles.card}>
       <View style={styles.cardHeader}>
         <View style={styles.userInfo}>
@@ -77,7 +83,7 @@ export default function Leaderboard() {
           </View>
           <View>
             <Text style={styles.userId}>
-              {item.userId ? item.userId.substring(0, 8) + '...' : 'Unknown'}
+              {item.userId ? item.userId.substring(0, 8) + '...' : 'Anonymous'}
             </Text>
             <Text style={styles.timestamp}>{formatDate(item.timestamp)}</Text>
           </View>
@@ -87,10 +93,7 @@ export default function Leaderboard() {
           { backgroundColor: getStatusColor(item.status) + '20' }
         ]}>
           <Text style={styles.statusEmoji}>{getStatusEmoji(item.status)}</Text>
-          <Text style={[
-            styles.statusText,
-            { color: getStatusColor(item.status) }
-          ]}>
+          <Text style={[styles.statusText, { color: getStatusColor(item.status) }]}>
             {item.status || 'pending'}
           </Text>
         </View>
@@ -109,11 +112,16 @@ export default function Leaderboard() {
           <Text style={styles.scoreLabel}>Score</Text>
           <Text style={styles.scoreValue}>{item.score || 0}</Text>
         </View>
-        
         <View style={styles.detailContainer}>
-          <Text style={styles.detailLabel}>Time Bonus</Text>
+          <Text style={styles.detailLabel}>Time</Text>
           <Text style={styles.detailValue}>
-            {item.didInTime ? '✅ On time' : '❌ Late'}
+            {item.didInTime ? '✅ On time' : '⏰ Late'}
+          </Text>
+        </View>
+        <View style={styles.detailContainer}>
+          <Text style={styles.detailLabel}>Location</Text>
+          <Text style={styles.detailValue}>
+            {item.locationOk !== false ? '✅ Verified' : '❌ Failed'}
           </Text>
         </View>
       </View>
@@ -133,7 +141,7 @@ export default function Leaderboard() {
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#10B981" />
+        <ActivityIndicator size="large" color={COLORS.accent} />
         <Text style={styles.loadingText}>Loading feed...</Text>
       </View>
     );
@@ -142,9 +150,9 @@ export default function Leaderboard() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Recent Activity</Text>
+        <Text style={styles.headerTitle}>Activity Feed</Text>
         <Text style={styles.headerSubtitle}>
-          {submissions.length} submission{submissions.length !== 1 ? 's' : ''}
+          {submissions.length} recent submission{submissions.length !== 1 ? 's' : ''}
         </Text>
       </View>
 
@@ -157,7 +165,8 @@ export default function Leaderboard() {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            colors={['#10B981']}
+            tintColor={COLORS.accent}
+            colors={[COLORS.accent]}
           />
         }
         ListEmptyComponent={renderEmpty}
@@ -170,158 +179,158 @@ export default function Leaderboard() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F9FAFB',
+    backgroundColor: COLORS.bg,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#F9FAFB',
+    backgroundColor: COLORS.bg,
   },
   loadingText: {
-    marginTop: 12,
-    color: '#6B7280',
-    fontSize: 16,
+    marginTop: SPACING.md,
+    color: COLORS.textSecondary,
+    fontSize: FONT.md,
   },
   header: {
-    padding: 20,
-    paddingTop: 60,
-    backgroundColor: '#FFFFFF',
+    padding: SPACING.xl,
+    paddingTop: Platform.OS === 'ios' ? 60 : 48,
+    backgroundColor: COLORS.bgCard,
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    borderBottomColor: COLORS.border,
   },
   headerTitle: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: '#111827',
+    fontSize: FONT.xxl,
+    fontWeight: FONT.bold,
+    color: COLORS.textPrimary,
   },
   headerSubtitle: {
-    fontSize: 14,
-    color: '#6B7280',
-    marginTop: 4,
+    fontSize: FONT.sm,
+    color: COLORS.textSecondary,
+    marginTop: SPACING.xs,
   },
   listContent: {
-    padding: 16,
-    paddingBottom: 40,
+    padding: SPACING.lg,
+    paddingBottom: SPACING.section,
   },
   card: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    marginBottom: 16,
+    backgroundColor: COLORS.bgCard,
+    borderRadius: RADIUS.lg,
+    marginBottom: SPACING.lg,
     overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    ...SHADOW.card,
   },
   cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 16,
+    padding: SPACING.lg,
   },
   userInfo: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   avatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#10B981',
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: COLORS.accentGlow,
+    borderWidth: 1,
+    borderColor: COLORS.accentBorder,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 12,
+    marginRight: SPACING.md,
   },
   avatarText: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#FFFFFF',
+    fontSize: FONT.md,
+    fontWeight: FONT.bold,
+    color: COLORS.accent,
   },
   userId: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#111827',
+    fontSize: FONT.sm,
+    fontWeight: FONT.semibold,
+    color: COLORS.textPrimary,
   },
   timestamp: {
-    fontSize: 12,
-    color: '#9CA3AF',
-    marginTop: 2,
+    fontSize: FONT.xs,
+    color: COLORS.textMuted,
+    marginTop: 1,
   },
   statusBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.xs + 2,
+    borderRadius: RADIUS.round,
   },
   statusEmoji: {
-    fontSize: 12,
-    marginRight: 4,
+    fontSize: 11,
+    marginRight: SPACING.xs,
   },
   statusText: {
-    fontSize: 12,
-    fontWeight: '600',
+    fontSize: FONT.xs,
+    fontWeight: FONT.semibold,
     textTransform: 'capitalize',
   },
   image: {
     width: '100%',
     height: 200,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: COLORS.bgElevated,
   },
   cardFooter: {
     flexDirection: 'row',
-    padding: 16,
+    padding: SPACING.lg,
     borderTopWidth: 1,
-    borderTopColor: '#F3F4F6',
+    borderTopColor: COLORS.border,
   },
   scoreContainer: {
     flex: 1,
   },
   detailContainer: {
     flex: 1,
-    alignItems: 'flex-end',
+    alignItems: 'center',
   },
   scoreLabel: {
-    fontSize: 12,
-    color: '#6B7280',
-    marginBottom: 4,
+    fontSize: FONT.xs,
+    color: COLORS.textMuted,
+    marginBottom: 2,
   },
   scoreValue: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#111827',
+    fontSize: FONT.xl,
+    fontWeight: FONT.extrabold,
+    color: COLORS.textPrimary,
   },
   detailLabel: {
-    fontSize: 12,
-    color: '#6B7280',
-    marginBottom: 4,
+    fontSize: FONT.xs,
+    color: COLORS.textMuted,
+    marginBottom: 2,
   },
   detailValue: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#111827',
+    fontSize: FONT.sm,
+    fontWeight: FONT.semibold,
+    color: COLORS.textPrimary,
   },
   emptyContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: 60,
+    paddingVertical: 80,
   },
   emptyEmoji: {
-    fontSize: 64,
-    marginBottom: 16,
+    fontSize: 56,
+    marginBottom: SPACING.lg,
   },
   emptyTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#111827',
-    marginBottom: 8,
+    fontSize: FONT.xl,
+    fontWeight: FONT.semibold,
+    color: COLORS.textPrimary,
+    marginBottom: SPACING.sm,
   },
   emptyText: {
-    fontSize: 14,
-    color: '#6B7280',
+    fontSize: FONT.sm,
+    color: COLORS.textSecondary,
     textAlign: 'center',
   },
 });

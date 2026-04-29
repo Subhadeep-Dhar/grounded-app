@@ -1,30 +1,37 @@
 import { db } from '../lib/firebase';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
-import { TASKS, LOCATIONS } from '../constants/config';
+import { assignLocation } from './locations';
+import { getRandomTask } from '../constants/messages';
 
 export const getTodayChallenge = async (userId) => {
-    const today = new Date().toDateString();
-    const ref = doc(db, 'challenges', `${userId}_${today}`);
+  const today = new Date().toDateString();
+  const ref = doc(db, 'challenges', `${userId}_${today}`);
 
-    const randomTask = TASKS[Math.floor(Math.random() * TASKS.length)];
-    const randomLocation = LOCATIONS[Math.floor(Math.random() * LOCATIONS.length)];
+  const snap = await getDoc(ref);
+  if (snap.exists()) return snap.data();
 
-    const snap = await getDoc(ref);
+  // Assign location via load-balanced system
+  const location = await assignLocation(userId);
+  const task = getRandomTask();
 
-    if (snap.exists()) return snap.data();
+  const challenge = {
+    userId,
+    date: today,
+    task,
+    location: location.name,
+    locationId: location.id,
+    latitude: location.latitude,
+    longitude: location.longitude,
+    radius: location.radius,
+    status: 'pending',
+    createdAt: Date.now(),
+  };
 
-    const challenge = {
-        userId,
-        date: today,
-        task: randomTask,
-        location: randomLocation.name,
-        latitude: randomLocation.latitude,
-        longitude: randomLocation.longitude,
-        radius: randomLocation.radius,
-        status: "pending"
-    };
+  await setDoc(ref, challenge);
+  return challenge;
+};
 
-    await setDoc(ref, challenge);
-
-    return challenge;
+export const updateChallengeStatus = async (userId, date, status) => {
+  const ref = doc(db, 'challenges', `${userId}_${date}`);
+  await setDoc(ref, { status }, { merge: true });
 };

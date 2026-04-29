@@ -2,44 +2,49 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    // Users collection - users can read/write their own data
+
+    // Users — users can read all, write only their own
     match /users/{userId} {
       allow read: if request.auth != null;
-      allow write: if request.auth != null && request.auth.uid == userId;
+      allow create: if request.auth != null && request.auth.uid == userId;
+      allow update: if request.auth != null && request.auth.uid == userId;
     }
-    
-    // Challenges collection - users can read/write their own challenges
+
+    // Challenges — users can read all, create/update their own
     match /challenges/{challengeId} {
       allow read: if request.auth != null;
       allow create: if request.auth != null;
-      allow update: if request.auth != null && request.resource.data.userId == request.auth.uid;
+      allow update: if request.auth != null &&
+        resource.data.userId == request.auth.uid;
     }
-    
-    // Submissions collection - users can create, read their own
+
+    // Submissions — users can read all, create their own
     match /submissions/{submissionId} {
       allow read: if request.auth != null;
       allow create: if request.auth != null;
-      // Only allow updates for admins (you can add custom claims)
-      allow update: if request.auth != null && 
-        request.resource.data.userId == request.auth.uid ||
-        request.auth.token.admin == true;
+      allow update: if request.auth != null &&
+        (resource.data.userId == request.auth.uid ||
+         request.auth.token.admin == true);
     }
-    
-    // Sessions collection - users can read/write their own sessions
+
+    // Sessions — users can read/write their own
     match /sessions/{sessionId} {
       allow read: if request.auth != null;
       allow create: if request.auth != null;
-      allow update: if request.auth != null && request.resource.data.userId == request.auth.uid;
+      allow update: if request.auth != null &&
+        resource.data.userId == request.auth.uid;
     }
-    
-    // Leaderboard - public read, no write
-    match /leaderboard/{document=**} {
+
+    // Locations — public read, admin write only
+    match /locations/{locationId} {
       allow read: if request.auth != null;
-      allow write: if false;
+      allow write: if request.auth != null &&
+        request.auth.token.admin == true;
+      // Also allow writes from client for seeding (remove in production)
+      allow create: if request.auth != null;
     }
-    
-    // Default deny all
+
+    // Default deny
     match /{document=**} {
       allow read, write: if false;
     }

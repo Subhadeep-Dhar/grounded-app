@@ -14,6 +14,7 @@ import {
 import { useRouter } from 'expo-router';
 import { login } from '../../src/services/auth';
 import { validateEmail, validatePassword } from '../../src/utils/validators';
+import { COLORS, FONT, SPACING, RADIUS, SHADOW } from '../../src/constants/theme';
 
 export default function Login() {
   const router = useRouter();
@@ -25,35 +26,26 @@ export default function Login() {
 
   const validate = () => {
     const newErrors = {};
-    
     const emailError = validateEmail(email);
     if (emailError) newErrors.email = emailError;
-    
     const passwordError = validatePassword(password);
     if (passwordError) newErrors.password = passwordError;
-    
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
   const handleLogin = async () => {
     if (!validate()) return;
-    
     setLoading(true);
     try {
       await login(email, password);
       router.replace('/(tabs)/home');
     } catch (error) {
       let message = 'Login failed. Please try again.';
-      if (error.code === 'auth/invalid-email') {
-        message = 'Invalid email address.';
-      } else if (error.code === 'auth/invalid-credential') {
-        message = 'Invalid email or password.';
-      } else if (error.code === 'auth/user-not-found') {
-        message = 'No account found with this email.';
-      } else if (error.code === 'auth/wrong-password') {
-        message = 'Incorrect password.';
-      }
+      if (error.code === 'auth/invalid-email') message = 'Invalid email address.';
+      else if (error.code === 'auth/invalid-credential') message = 'Invalid email or password.';
+      else if (error.code === 'auth/user-not-found') message = 'No account found with this email.';
+      else if (error.code === 'auth/wrong-password') message = 'Incorrect password.';
       Alert.alert('Login Error', message);
     } finally {
       setLoading(false);
@@ -61,14 +53,15 @@ export default function Login() {
   };
 
   return (
-    <KeyboardAvoidingView 
+    <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={styles.container}
     >
-      <ScrollView 
+      <ScrollView
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
       >
+        {/* Logo */}
         <View style={styles.logoContainer}>
           <View style={styles.logoCircle}>
             <Text style={styles.logoEmoji}>🌱</Text>
@@ -77,12 +70,13 @@ export default function Login() {
           <Text style={styles.subtitle}>Show up. Every day.</Text>
         </View>
 
+        {/* Form */}
         <View style={styles.form}>
           <View style={styles.inputGroup}>
             <Text style={styles.label}>Email</Text>
             <TextInput
               placeholder="you@example.com"
-              placeholderTextColor="#9CA3AF"
+              placeholderTextColor={COLORS.textMuted}
               value={email}
               onChangeText={setEmail}
               autoCapitalize="none"
@@ -98,7 +92,7 @@ export default function Login() {
             <View style={styles.passwordContainer}>
               <TextInput
                 placeholder="••••••••"
-                placeholderTextColor="#9CA3AF"
+                placeholderTextColor={COLORS.textMuted}
                 value={password}
                 onChangeText={setPassword}
                 secureTextEntry={!showPassword}
@@ -118,9 +112,10 @@ export default function Login() {
             style={[styles.button, loading && styles.buttonDisabled]}
             onPress={handleLogin}
             disabled={loading}
+            activeOpacity={0.8}
           >
             {loading ? (
-              <ActivityIndicator color="#FFFFFF" />
+              <ActivityIndicator color={COLORS.textPrimary} />
             ) : (
               <Text style={styles.buttonText}>Sign In</Text>
             )}
@@ -149,67 +144,74 @@ export default function Login() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F9FAFB',
+    backgroundColor: COLORS.bg,
   },
   scrollContent: {
     flexGrow: 1,
     justifyContent: 'center',
-    padding: 24,
+    padding: SPACING.xxl,
   },
   logoContainer: {
     alignItems: 'center',
-    marginBottom: 40,
+    marginBottom: SPACING.section,
   },
   logoCircle: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: '#10B981',
+    width: 88,
+    height: 88,
+    borderRadius: 44,
+    backgroundColor: COLORS.accentGlow,
+    borderWidth: 2,
+    borderColor: COLORS.accentBorder,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: SPACING.lg,
+    ...SHADOW.glow,
   },
   logoEmoji: {
-    fontSize: 40,
+    fontSize: 42,
   },
   title: {
-    fontSize: 32,
-    fontWeight: '700',
-    color: '#111827',
-    marginBottom: 4,
+    fontSize: FONT.hero,
+    fontWeight: FONT.extrabold,
+    color: COLORS.textPrimary,
+    marginBottom: SPACING.xs,
+    letterSpacing: -1,
   },
   subtitle: {
-    fontSize: 16,
-    color: '#6B7280',
+    fontSize: FONT.lg,
+    color: COLORS.textSecondary,
+    fontWeight: FONT.medium,
   },
   form: {
     width: '100%',
   },
   inputGroup: {
-    marginBottom: 20,
+    marginBottom: SPACING.xl,
   },
   label: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#374151',
-    marginBottom: 8,
+    fontSize: FONT.sm,
+    fontWeight: FONT.semibold,
+    color: COLORS.textSecondary,
+    marginBottom: SPACING.sm,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   input: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: COLORS.bgInput,
     borderWidth: 1,
-    borderColor: '#D1D5DB',
-    borderRadius: 12,
-    padding: 16,
-    fontSize: 16,
-    color: '#111827',
+    borderColor: COLORS.border,
+    borderRadius: RADIUS.md,
+    padding: SPACING.lg,
+    fontSize: FONT.md,
+    color: COLORS.textPrimary,
   },
   inputError: {
-    borderColor: '#EF4444',
+    borderColor: COLORS.error,
   },
   errorText: {
-    color: '#EF4444',
-    fontSize: 12,
-    marginTop: 4,
+    color: COLORS.error,
+    fontSize: FONT.xs,
+    marginTop: SPACING.xs,
   },
   passwordContainer: {
     position: 'relative',
@@ -219,7 +221,7 @@ const styles = StyleSheet.create({
   },
   eyeButton: {
     position: 'absolute',
-    right: 16,
+    right: SPACING.lg,
     top: 0,
     bottom: 0,
     justifyContent: 'center',
@@ -228,44 +230,47 @@ const styles = StyleSheet.create({
     fontSize: 20,
   },
   button: {
-    backgroundColor: '#10B981',
-    borderRadius: 12,
-    padding: 18,
+    backgroundColor: COLORS.accent,
+    borderRadius: RADIUS.md,
+    padding: SPACING.lg + 2,
     alignItems: 'center',
-    marginTop: 8,
+    marginTop: SPACING.sm,
+    ...SHADOW.glow,
   },
   buttonDisabled: {
-    backgroundColor: '#9CA3AF',
+    backgroundColor: COLORS.textMuted,
+    shadowOpacity: 0,
   },
   buttonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
+    color: COLORS.textPrimary,
+    fontSize: FONT.md,
+    fontWeight: FONT.bold,
+    letterSpacing: 0.3,
   },
   divider: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginVertical: 24,
+    marginVertical: SPACING.xxl,
   },
   dividerLine: {
     flex: 1,
     height: 1,
-    backgroundColor: '#E5E7EB',
+    backgroundColor: COLORS.border,
   },
   dividerText: {
-    color: '#9CA3AF',
-    paddingHorizontal: 16,
-    fontSize: 14,
+    color: COLORS.textMuted,
+    paddingHorizontal: SPACING.lg,
+    fontSize: FONT.sm,
   },
   linkButton: {
     alignItems: 'center',
   },
   linkText: {
-    fontSize: 14,
-    color: '#6B7280',
+    fontSize: FONT.sm,
+    color: COLORS.textSecondary,
   },
   linkBold: {
-    color: '#10B981',
-    fontWeight: '600',
+    color: COLORS.accent,
+    fontWeight: FONT.semibold,
   },
 });

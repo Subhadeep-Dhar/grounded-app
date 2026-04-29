@@ -1,65 +1,89 @@
 import { db } from '../lib/firebase';
 import { doc, setDoc, getDoc, updateDoc } from 'firebase/firestore';
+import { uploadImage } from './storage';
 import { calculateScore } from '../utils/scoring';
+import { getDistance } from '../utils/location';
+import { TIME_CONFIG, TRUST_CONFIG } from '../constants/config';
 
-export const submitChallenge = async (userId, challenge, mediaUrl, locationOk) => {
+/**
+ * Submit a completed challenge.
+ * Uploads image, verifies location, calculates score, updates user stats.
+ */
+export const submitChallenge = async (userId, challenge, localImageUri, userLocation) => {
   const subRef = doc(db, 'submissions', `${userId}_${challenge.date}`);
   const userRef = doc(db, 'users', userId);
 
-  // ❌ prevent multiple submissions
+  // Prevent duplicate submissions
   const existing = await getDoc(subRef);
   if (existing.exists()) {
-    throw new Error("Already submitted today ❌");
+    throw new Error('Already submitted today');
   }
 
+  // Time validation
   const now = new Date();
-  const hour = now.getHours();
-  const minute = now.getMinutes();
+  const currentMinutes = now.getHours() * 60 + now.getMinutes();
+  const didInTime = currentMinutes >= TIME_CONFIG.actionStart && currentMinutes <= TIME_CONFIG.actionEnd;
+  const submittedInTime = currentMinutes <= TIME_CONFIG.submitEnd;
 
-  const currentMinutes = hour * 60 + minute;
-
-  const actionStart = 5 * 60;        // 5:00
-  const actionEnd = 7 * 60;          // 7:00
-  const submitEnd = 7 * 60 + 30;     // 7:30
-
-  const didInTime = currentMinutes >= actionStart && currentMinutes <= actionEnd;
-  const submittedInTime = currentMinutes <= submitEnd;
-
-  // ❌ hard block after submission window
   if (!submittedInTime) {
-    throw new Error("Submission window closed (after 7:30 AM) ❌");
+    throw new Error('Submission window closed for today');
   }
 
-  // 🔥 scoring (use strict time logic)
+  // Anti-cheat: re-verify location at submission time
+  let locationOk = false;
+  if (userLocation && challenge.latitude && challenge.longitude) {
+    const dist = getDistance(
+      userLocation.latitude,
+      userLocation.longitude,
+      challenge.latitude,
+      challenge.longitude
+    );
+    locationOk = dist <= challenge.radius;
+  }
+
+  if (!locationOk) {
+    throw new Error('Location verification failed. You must be at the destination.');
+  }
+
+  // Upload image to Firebase Storage (not just local URI)
+  let mediaUrl = null;
+  if (localImageUri) {
+    mediaUrl = await uploadImage(localImageUri, userId);
+  }
+
+  // Calculate score
   const score = calculateScore({
-    timeOk: didInTime, // 🔥 FIXED (not submittedInTime)
+    timeOk: didInTime,
     locationOk,
-    hasMedia: !!mediaUrl
+    hasMedia: !!mediaUrl,
+    streakCount: 0, // Will be computed below
   });
 
   const status =
-    score >= 70 ? "approved" :
-    score >= 40 ? "flagged" :
-    "rejected";
+    score >= 70 ? 'approved' :
+    score >= 40 ? 'flagged' :
+    'rejected';
 
+  // Save submission
   await setDoc(subRef, {
     userId,
     challengeId: challenge.date,
+    locationId: challenge.locationId || null,
     mediaUrl,
     score,
     status,
     didInTime,
+    locationOk,
     timestamp: Date.now(),
-    clientTime: now.toISOString()
+    clientTime: now.toISOString(),
   });
 
-  // 🔥 Update user ONLY if approved
-  if (status === "approved") {
+  // Update user stats (only if approved or flagged)
+  if (status === 'approved' || status === 'flagged') {
     const userSnap = await getDoc(userRef);
-    const user = userSnap.data();
+    const user = userSnap.exists() ? userSnap.data() : {};
 
     const today = new Date().toDateString();
-
     let newStreak = 1;
     let canRecover = false;
 
@@ -68,29 +92,26 @@ export const submitChallenge = async (userId, challenge, mediaUrl, locationOk) =
       const diff = (new Date(today) - last) / (1000 * 60 * 60 * 24);
 
       if (diff === 1) {
-        // ✅ normal streak
         newStreak = (user.streakCount || 0) + 1;
-      } 
-      else if (diff > 1) {
-        // ❌ missed → reset but allow recovery
-        newStreak = 1;
-        canRecover = true;
-      } 
-      else {
-        newStreak = user.streakCount;
+      } else if (diff > 1) {
+        // Check recovery
+        if (user.canRecover) {
+          newStreak = (user.streakCount || 0) + 1;
+          canRecover = false;
+        } else {
+          newStreak = 1;
+          canRecover = true;
+        }
+      } else {
+        // Same day
+        newStreak = user.streakCount || 1;
       }
     }
 
-    // 🔥 Recovery logic
-    if (user.canRecover) {
-      newStreak = (user.streakCount || 0) + 1;
-      canRecover = false;
-    }
-
+    // Trust delta
     let trustDelta = 0;
-    if (status === "approved") trustDelta = +2;
-    if (status === "flagged") trustDelta = -1;
-    if (status === "rejected") trustDelta = -3;
+    if (status === 'approved') trustDelta = TRUST_CONFIG.approvedDelta;
+    if (status === 'flagged') trustDelta = TRUST_CONFIG.flaggedDelta;
 
     await updateDoc(userRef, {
       totalCompletions: (user.totalCompletions || 0) + 1,
@@ -98,9 +119,16 @@ export const submitChallenge = async (userId, challenge, mediaUrl, locationOk) =
       lastCompletedDate: today,
       canRecover,
       trustScore: Math.max(
-        0,
-        Math.min(100, (user.trustScore || 50) + trustDelta)
-      )
+        TRUST_CONFIG.min,
+        Math.min(TRUST_CONFIG.max, (user.trustScore || TRUST_CONFIG.initial) + trustDelta)
+      ),
     });
   }
+
+  // Update challenge status
+  await setDoc(doc(db, 'challenges', `${userId}_${challenge.date}`), {
+    status: 'completed',
+  }, { merge: true });
+
+  return { score, status, mediaUrl };
 };

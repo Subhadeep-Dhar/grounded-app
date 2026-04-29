@@ -14,15 +14,8 @@ import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../src/lib/firebase';
 import { useAuthStore } from '../../src/store/authStore';
 import { logout } from '../../src/services/auth';
-
-const BADGES = [
-  { id: 'early_bird', emoji: '🌅', name: 'Early Bird', requirement: '3-day streak', earned: false },
-  { id: 'consistent', emoji: '💪', name: 'Consistent', requirement: '7-day streak', earned: false },
-  { id: 'first_step', emoji: '🎯', name: 'First Step', requirement: '5 completions', earned: false },
-  { id: 'trusted', emoji: '⭐', name: 'Trusted', requirement: '80+ trust score', earned: false },
-  { id: 'champion', emoji: '🏆', name: 'Champion', requirement: '30 completions', earned: false },
-  { id: 'unstoppable', emoji: '🔥', name: 'Unstoppable', requirement: '14-day streak', earned: false },
-];
+import { BADGES } from '../../src/constants/config';
+import { COLORS, FONT, SPACING, RADIUS, SHADOW } from '../../src/constants/theme';
 
 export default function Profile() {
   const router = useRouter();
@@ -32,12 +25,9 @@ export default function Profile() {
 
   const fetchUserData = useCallback(async () => {
     if (!user) return;
-    
     try {
       const snap = await getDoc(doc(db, 'users', user.uid));
-      if (snap.exists()) {
-        setUserData(snap.data());
-      }
+      if (snap.exists()) setUserData(snap.data());
     } catch (error) {
       console.error('Error fetching user data:', error);
     } finally {
@@ -55,8 +45,8 @@ export default function Profile() {
       'Are you sure you want to sign out?',
       [
         { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Sign Out', 
+        {
+          text: 'Sign Out',
           style: 'destructive',
           onPress: async () => {
             try {
@@ -64,50 +54,22 @@ export default function Profile() {
             } catch (error) {
               Alert.alert('Error', 'Failed to sign out');
             }
-          }
+          },
         },
       ]
     );
   };
 
-  const getEarnedBadges = () => {
-    if (!userData) return [];
-    
-    return BADGES.map(badge => {
-      let earned = false;
-      
-      switch (badge.id) {
-        case 'early_bird':
-          earned = (userData.streakCount || 0) >= 3;
-          break;
-        case 'consistent':
-          earned = (userData.streakCount || 0) >= 7;
-          break;
-        case 'first_step':
-          earned = (userData.totalCompletions || 0) >= 5;
-          break;
-        case 'trusted':
-          earned = (userData.trustScore || 0) >= 80;
-          break;
-        case 'champion':
-          earned = (userData.totalCompletions || 0) >= 30;
-          break;
-        case 'unstoppable':
-          earned = (userData.streakCount || 0) >= 14;
-          break;
-      }
-      
-      return { ...badge, earned };
-    });
-  };
-
-  const earnedBadges = getEarnedBadges();
+  const earnedBadges = BADGES.map(badge => ({
+    ...badge,
+    earned: badge.check(userData || {}),
+  }));
   const earnedCount = earnedBadges.filter(b => b.earned).length;
 
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#10B981" />
+        <ActivityIndicator size="large" color={COLORS.accent} />
         <Text style={styles.loadingText}>Loading profile...</Text>
       </View>
     );
@@ -126,56 +88,54 @@ export default function Profile() {
         </View>
         <Text style={styles.email}>{user?.email || 'User'}</Text>
         <Text style={styles.memberSince}>
-          Member since {new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+          Member since {new Date(userData?.createdAt || Date.now()).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
         </Text>
       </View>
 
       {/* Stats Cards */}
       <View style={styles.statsGrid}>
-        <View style={styles.statCard}>
+        <View style={[styles.statCard, styles.statCardAccent]}>
           <Text style={styles.statEmoji}>🔥</Text>
           <Text style={styles.statValue}>{userData?.streakCount || 0}</Text>
           <Text style={styles.statLabel}>Day Streak</Text>
         </View>
-        
+
         <View style={styles.statCard}>
           <Text style={styles.statEmoji}>🏆</Text>
           <Text style={styles.statValue}>{userData?.totalCompletions || 0}</Text>
           <Text style={styles.statLabel}>Completions</Text>
         </View>
-        
+
         <View style={styles.statCard}>
           <Text style={styles.statEmoji}>⭐</Text>
           <Text style={styles.statValue}>{userData?.trustScore || 50}</Text>
-          <Text style={styles.statLabel}>Trust Score</Text>
+          <Text style={styles.statLabel}>Trust</Text>
         </View>
       </View>
 
       {/* Progress Section */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Your Progress</Text>
-        
+
         <View style={styles.progressCard}>
           <View style={styles.progressHeader}>
             <Text style={styles.progressTitle}>Badge Collection</Text>
-            <Text style={styles.progressCount}>
-              {earnedCount} / {BADGES.length}
-            </Text>
+            <Text style={styles.progressCount}>{earnedCount} / {BADGES.length}</Text>
           </View>
-          
+
           <View style={styles.progressBar}>
-            <View 
+            <View
               style={[
-                styles.progressFill, 
+                styles.progressFill,
                 { width: `${(earnedCount / BADGES.length) * 100}%` }
-              ]} 
+              ]}
             />
           </View>
-          
+
           <Text style={styles.progressText}>
-            {earnedCount === BADGES.length 
-              ? '🎉 All badges earned!' 
-              : `Earn ${BADGES.length - earnedCount} more badge${BADGES.length - earnedCount > 1 ? 's' : ''} to complete your collection`}
+            {earnedCount === BADGES.length
+              ? '🎉 All badges earned!'
+              : `Earn ${BADGES.length - earnedCount} more to complete your collection`}
           </Text>
         </View>
       </View>
@@ -183,28 +143,19 @@ export default function Profile() {
       {/* Badges Section */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Badges</Text>
-        
+
         <View style={styles.badgesGrid}>
           {earnedBadges.map((badge) => (
-            <View 
-              key={badge.id} 
-              style={[
-                styles.badgeCard,
-                !badge.earned && styles.badgeLocked
-              ]}
+            <View
+              key={badge.id}
+              style={[styles.badgeCard, !badge.earned && styles.badgeLocked]}
             >
               <Text style={styles.badgeEmoji}>{badge.emoji}</Text>
-              <Text style={[
-                styles.badgeName,
-                !badge.earned && styles.badgeNameLocked
-              ]}>
+              <Text style={[styles.badgeName, !badge.earned && styles.badgeNameLocked]}>
                 {badge.name}
               </Text>
-              <Text style={[
-                styles.badgeRequirement,
-                !badge.earned && styles.badgeRequirementLocked
-              ]}>
-                {badge.requirement}
+              <Text style={[styles.badgeDesc, !badge.earned && styles.badgeDescLocked]}>
+                {badge.desc}
               </Text>
               {badge.earned && (
                 <View style={styles.earnedBadge}>
@@ -220,7 +171,7 @@ export default function Profile() {
       {Platform.OS === 'web' && (
         <View style={styles.webWarning}>
           <Text style={styles.webWarningText}>
-            ⚠️ Some features are limited on web. Open in mobile app for full experience.
+            ⚠️ Some features are limited on web. Open on mobile for full experience.
           </Text>
         </View>
       )}
@@ -230,10 +181,11 @@ export default function Profile() {
         <TouchableOpacity
           style={styles.logoutButton}
           onPress={handleLogout}
+          activeOpacity={0.8}
         >
           <Text style={styles.logoutButtonText}>Sign Out</Text>
         </TouchableOpacity>
-        
+
         <Text style={styles.version}>Grounded v1.0.0</Text>
       </View>
     </ScrollView>
@@ -243,226 +195,242 @@ export default function Profile() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F9FAFB',
+    backgroundColor: COLORS.bg,
   },
   content: {
-    paddingBottom: 40,
+    paddingBottom: SPACING.section,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#F9FAFB',
+    backgroundColor: COLORS.bg,
   },
   loadingText: {
-    marginTop: 12,
-    color: '#6B7280',
-    fontSize: 16,
+    marginTop: SPACING.md,
+    color: COLORS.textSecondary,
+    fontSize: FONT.md,
   },
+
+  // Header
   header: {
     alignItems: 'center',
-    padding: 24,
-    paddingTop: 60,
-    backgroundColor: '#FFFFFF',
+    padding: SPACING.xxl,
+    paddingTop: Platform.OS === 'ios' ? 70 : 56,
+    backgroundColor: COLORS.bgCard,
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    borderBottomColor: COLORS.border,
   },
   avatarContainer: {
-    marginBottom: 16,
+    marginBottom: SPACING.lg,
   },
   avatar: {
     width: 80,
     height: 80,
     borderRadius: 40,
-    backgroundColor: '#10B981',
+    backgroundColor: COLORS.accentGlow,
+    borderWidth: 2,
+    borderColor: COLORS.accentBorder,
     justifyContent: 'center',
     alignItems: 'center',
+    ...SHADOW.glow,
   },
   avatarText: {
-    fontSize: 32,
-    fontWeight: '700',
-    color: '#FFFFFF',
+    fontSize: FONT.xxxl,
+    fontWeight: FONT.bold,
+    color: COLORS.accent,
   },
   email: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#111827',
-    marginBottom: 4,
+    fontSize: FONT.xl,
+    fontWeight: FONT.semibold,
+    color: COLORS.textPrimary,
+    marginBottom: SPACING.xs,
   },
   memberSince: {
-    fontSize: 14,
-    color: '#6B7280',
+    fontSize: FONT.sm,
+    color: COLORS.textMuted,
   },
+
+  // Stats
   statsGrid: {
     flexDirection: 'row',
-    padding: 16,
-    gap: 12,
+    padding: SPACING.lg,
+    gap: SPACING.md,
   },
   statCard: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 20,
+    backgroundColor: COLORS.bgCard,
+    borderRadius: RADIUS.lg,
+    padding: SPACING.xl,
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    ...SHADOW.subtle,
+  },
+  statCardAccent: {
+    borderColor: COLORS.accentBorder,
   },
   statEmoji: {
-    fontSize: 32,
-    marginBottom: 8,
+    fontSize: 28,
+    marginBottom: SPACING.sm,
   },
   statValue: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: '#111827',
+    fontSize: FONT.xxl,
+    fontWeight: FONT.extrabold,
+    color: COLORS.textPrimary,
   },
   statLabel: {
-    fontSize: 12,
-    color: '#6B7280',
-    marginTop: 4,
+    fontSize: FONT.xs,
+    color: COLORS.textMuted,
+    marginTop: SPACING.xs,
     textAlign: 'center',
   },
+
+  // Section
   section: {
-    padding: 16,
-    paddingTop: 8,
+    padding: SPACING.lg,
+    paddingTop: SPACING.sm,
   },
   sectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#111827',
-    marginBottom: 16,
+    fontSize: FONT.lg,
+    fontWeight: FONT.semibold,
+    color: COLORS.textPrimary,
+    marginBottom: SPACING.lg,
   },
+
+  // Progress
   progressCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
+    backgroundColor: COLORS.bgCard,
+    borderRadius: RADIUS.lg,
+    padding: SPACING.xl,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    ...SHADOW.subtle,
   },
   progressHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: SPACING.md,
   },
   progressTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#111827',
+    fontSize: FONT.md,
+    fontWeight: FONT.semibold,
+    color: COLORS.textPrimary,
   },
   progressCount: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#10B981',
+    fontSize: FONT.md,
+    fontWeight: FONT.bold,
+    color: COLORS.accent,
   },
   progressBar: {
     height: 8,
-    backgroundColor: '#E5E7EB',
-    borderRadius: 4,
+    backgroundColor: COLORS.bgElevated,
+    borderRadius: RADIUS.sm,
     overflow: 'hidden',
-    marginBottom: 12,
+    marginBottom: SPACING.md,
   },
   progressFill: {
     height: '100%',
-    backgroundColor: '#10B981',
-    borderRadius: 4,
+    backgroundColor: COLORS.accent,
+    borderRadius: RADIUS.sm,
   },
   progressText: {
-    fontSize: 14,
-    color: '#6B7280',
+    fontSize: FONT.sm,
+    color: COLORS.textMuted,
   },
+
+  // Badges
   badgesGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 12,
+    gap: SPACING.md,
   },
   badgeCard: {
     width: '47%',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 16,
+    backgroundColor: COLORS.bgCard,
+    borderRadius: RADIUS.lg,
+    padding: SPACING.lg,
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
-    borderWidth: 2,
-    borderColor: '#10B981',
+    borderWidth: 1.5,
+    borderColor: COLORS.accentBorder,
+    ...SHADOW.subtle,
   },
   badgeLocked: {
-    borderColor: '#E5E7EB',
-    opacity: 0.6,
+    borderColor: COLORS.border,
+    opacity: 0.5,
   },
   badgeEmoji: {
-    fontSize: 36,
-    marginBottom: 8,
+    fontSize: 32,
+    marginBottom: SPACING.sm,
   },
   badgeName: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#111827',
-    marginBottom: 4,
+    fontSize: FONT.sm,
+    fontWeight: FONT.semibold,
+    color: COLORS.textPrimary,
+    marginBottom: 2,
   },
   badgeNameLocked: {
-    color: '#9CA3AF',
+    color: COLORS.textMuted,
   },
-  badgeRequirement: {
-    fontSize: 11,
-    color: '#6B7280',
+  badgeDesc: {
+    fontSize: FONT.xs,
+    color: COLORS.textSecondary,
     textAlign: 'center',
   },
-  badgeRequirementLocked: {
-    color: '#9CA3AF',
+  badgeDescLocked: {
+    color: COLORS.textMuted,
   },
   earnedBadge: {
-    backgroundColor: '#D1FAE5',
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 12,
-    marginTop: 8,
+    backgroundColor: COLORS.accentGlow,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.xs,
+    borderRadius: RADIUS.round,
+    marginTop: SPACING.sm,
   },
   earnedText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#065F46',
+    fontSize: FONT.xs,
+    fontWeight: FONT.semibold,
+    color: COLORS.accent,
   },
+
+  // Web Warning
   webWarning: {
-    backgroundColor: '#FEF3C7',
-    margin: 16,
-    borderRadius: 12,
-    padding: 16,
+    backgroundColor: COLORS.warningBg,
+    margin: SPACING.lg,
+    borderRadius: RADIUS.md,
+    padding: SPACING.lg,
+    borderWidth: 1,
+    borderColor: 'rgba(245, 158, 11, 0.3)',
   },
   webWarningText: {
-    fontSize: 14,
-    color: '#92400E',
+    fontSize: FONT.sm,
+    color: COLORS.warning,
     textAlign: 'center',
   },
+
+  // Actions
   actions: {
-    padding: 16,
-    paddingTop: 8,
+    padding: SPACING.lg,
+    paddingTop: SPACING.sm,
   },
   logoutButton: {
-    backgroundColor: '#FEE2E2',
-    borderRadius: 12,
-    padding: 16,
+    backgroundColor: COLORS.errorBg,
+    borderRadius: RADIUS.md,
+    padding: SPACING.lg,
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: SPACING.lg,
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.3)',
   },
   logoutButtonText: {
-    color: '#DC2626',
-    fontSize: 16,
-    fontWeight: '600',
+    color: COLORS.error,
+    fontSize: FONT.md,
+    fontWeight: FONT.semibold,
   },
   version: {
-    fontSize: 12,
-    color: '#9CA3AF',
+    fontSize: FONT.xs,
+    color: COLORS.textMuted,
     textAlign: 'center',
   },
 });

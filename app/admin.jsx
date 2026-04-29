@@ -9,31 +9,28 @@ import {
   ActivityIndicator,
   TouchableOpacity,
   Alert,
+  Platform,
 } from 'react-native';
 import { db } from '../src/lib/firebase';
 import { collection, getDocs, query, where, updateDoc, doc } from 'firebase/firestore';
+import { COLORS, FONT, SPACING, RADIUS, SHADOW } from '../src/constants/theme';
 
 export default function Admin() {
   const [submissions, setSubmissions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [filter, setFilter] = useState('all'); // all, flagged, pending
+  const [filter, setFilter] = useState('all');
 
   const fetchSubmissions = useCallback(async () => {
     try {
       let q = query(collection(db, 'submissions'));
-      
       if (filter === 'flagged') {
         q = query(collection(db, 'submissions'), where('status', '==', 'flagged'));
       } else if (filter === 'pending') {
         q = query(collection(db, 'submissions'), where('status', '==', 'pending'));
       }
-      
       const snap = await getDocs(q);
-      const data = snap.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
+      const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       setSubmissions(data);
     } catch (error) {
       console.error('Error fetching submissions:', error);
@@ -44,9 +41,7 @@ export default function Admin() {
     }
   }, [filter]);
 
-  useEffect(() => {
-    fetchSubmissions();
-  }, [fetchSubmissions]);
+  useEffect(() => { fetchSubmissions(); }, [fetchSubmissions]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
@@ -55,36 +50,26 @@ export default function Admin() {
 
   const handleApprove = async (item) => {
     try {
-      await updateDoc(doc(db, 'submissions', item.id), {
-        status: 'approved',
-        reviewedAt: Date.now(),
-      });
+      await updateDoc(doc(db, 'submissions', item.id), { status: 'approved', reviewedAt: Date.now() });
       Alert.alert('Success', 'Submission approved');
       fetchSubmissions();
-    } catch (error) {
-      Alert.alert('Error', 'Failed to approve submission');
-    }
+    } catch (error) { Alert.alert('Error', 'Failed to approve'); }
   };
 
   const handleReject = async (item) => {
     try {
-      await updateDoc(doc(db, 'submissions', item.id), {
-        status: 'rejected',
-        reviewedAt: Date.now(),
-      });
+      await updateDoc(doc(db, 'submissions', item.id), { status: 'rejected', reviewedAt: Date.now() });
       Alert.alert('Success', 'Submission rejected');
       fetchSubmissions();
-    } catch (error) {
-      Alert.alert('Error', 'Failed to reject submission');
-    }
+    } catch (error) { Alert.alert('Error', 'Failed to reject'); }
   };
 
   const getStatusColor = (status) => {
     switch (status) {
-      case 'approved': return '#10B981';
-      case 'flagged': return '#F59E0B';
-      case 'rejected': return '#EF4444';
-      default: return '#6B7280';
+      case 'approved': return COLORS.success;
+      case 'flagged': return COLORS.warning;
+      case 'rejected': return COLORS.error;
+      default: return COLORS.textMuted;
     }
   };
 
@@ -105,38 +90,29 @@ export default function Admin() {
           </Text>
         </View>
       </View>
-
       {item.mediaUrl && (
-        <Image
-          source={{ uri: item.mediaUrl }}
-          style={styles.image}
-          resizeMode="cover"
-        />
+        <Image source={{ uri: item.mediaUrl }} style={styles.image} resizeMode="cover" />
       )}
-
       <View style={styles.scoreRow}>
         <View style={styles.scoreItem}>
           <Text style={styles.scoreLabel}>Score</Text>
           <Text style={styles.scoreValue}>{item.score || 0}</Text>
         </View>
         <View style={styles.scoreItem}>
-          <Text style={styles.scoreLabel}>Time Bonus</Text>
-          <Text style={styles.scoreValue}>{item.didInTime ? '✅ Yes' : '❌ No'}</Text>
+          <Text style={styles.scoreLabel}>Time</Text>
+          <Text style={styles.scoreValue}>{item.didInTime ? '✅' : '❌'}</Text>
+        </View>
+        <View style={styles.scoreItem}>
+          <Text style={styles.scoreLabel}>Location</Text>
+          <Text style={styles.scoreValue}>{item.locationOk !== false ? '✅' : '❌'}</Text>
         </View>
       </View>
-
-      {item.status === 'flagged' && (
+      {(item.status === 'flagged' || item.status === 'pending') && (
         <View style={styles.actions}>
-          <TouchableOpacity
-            style={[styles.actionButton, styles.approveButton]}
-            onPress={() => handleApprove(item)}
-          >
+          <TouchableOpacity style={[styles.actionButton, styles.approveBtn]} onPress={() => handleApprove(item)}>
             <Text style={styles.approveText}>✓ Approve</Text>
           </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.actionButton, styles.rejectButton]}
-            onPress={() => handleReject(item)}
-          >
+          <TouchableOpacity style={[styles.actionButton, styles.rejectBtn]} onPress={() => handleReject(item)}>
             <Text style={styles.rejectText}>✗ Reject</Text>
           </TouchableOpacity>
         </View>
@@ -144,17 +120,10 @@ export default function Admin() {
     </View>
   );
 
-  const renderEmpty = () => (
-    <View style={styles.emptyContainer}>
-      <Text style={styles.emptyEmoji}>📭</Text>
-      <Text style={styles.emptyText}>No submissions found</Text>
-    </View>
-  );
-
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#10B981" />
+        <ActivityIndicator size="large" color={COLORS.accent} />
         <Text style={styles.loadingText}>Loading...</Text>
       </View>
     );
@@ -164,221 +133,71 @@ export default function Admin() {
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Admin Panel</Text>
-        <Text style={styles.headerSubtitle}>
-          {submissions.length} submission{submissions.length !== 1 ? 's' : ''}
-        </Text>
+        <Text style={styles.headerSubtitle}>{submissions.length} submissions</Text>
       </View>
-
       <View style={styles.filterRow}>
-        <TouchableOpacity
-          style={[styles.filterButton, filter === 'all' && styles.filterActive]}
-          onPress={() => setFilter('all')}
-        >
-          <Text style={[styles.filterText, filter === 'all' && styles.filterTextActive]}>
-            All
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.filterButton, filter === 'flagged' && styles.filterActive]}
-          onPress={() => setFilter('flagged')}
-        >
-          <Text style={[styles.filterText, filter === 'flagged' && styles.filterTextActive]}>
-            Flagged
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.filterButton, filter === 'pending' && styles.filterActive]}
-          onPress={() => setFilter('pending')}
-        >
-          <Text style={[styles.filterText, filter === 'pending' && styles.filterTextActive]}>
-            Pending
-          </Text>
-        </TouchableOpacity>
+        {['all', 'flagged', 'pending'].map(f => (
+          <TouchableOpacity
+            key={f}
+            style={[styles.filterButton, filter === f && styles.filterActive]}
+            onPress={() => setFilter(f)}
+          >
+            <Text style={[styles.filterText, filter === f && styles.filterTextActive]}>
+              {f.charAt(0).toUpperCase() + f.slice(1)}
+            </Text>
+          </TouchableOpacity>
+        ))}
       </View>
-
       <FlatList
         data={submissions}
         renderItem={renderItem}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.listContent}
         refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            colors={['#10B981']}
-          />
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.accent} colors={[COLORS.accent]} />
         }
-        ListEmptyComponent={renderEmpty}
+        ListEmptyComponent={() => (
+          <View style={styles.emptyContainer}>
+            <Text style={styles.emptyEmoji}>📭</Text>
+            <Text style={styles.emptyText}>No submissions found</Text>
+          </View>
+        )}
       />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F9FAFB',
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#F9FAFB',
-  },
-  loadingText: {
-    marginTop: 12,
-    color: '#6B7280',
-    fontSize: 16,
-  },
-  header: {
-    padding: 20,
-    paddingTop: 60,
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-  },
-  headerTitle: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: '#111827',
-  },
-  headerSubtitle: {
-    fontSize: 14,
-    color: '#6B7280',
-    marginTop: 4,
-  },
-  filterRow: {
-    flexDirection: 'row',
-    padding: 16,
-    gap: 12,
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-  },
-  filterButton: {
-    flex: 1,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    backgroundColor: '#F3F4F6',
-    alignItems: 'center',
-  },
-  filterActive: {
-    backgroundColor: '#10B981',
-  },
-  filterText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#6B7280',
-  },
-  filterTextActive: {
-    color: '#FFFFFF',
-  },
-  listContent: {
-    padding: 16,
-    paddingBottom: 40,
-  },
-  card: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    marginBottom: 16,
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 16,
-  },
-  userId: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#111827',
-  },
-  timestamp: {
-    fontSize: 12,
-    color: '#9CA3AF',
-    marginTop: 2,
-  },
-  statusBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-  },
-  statusText: {
-    fontSize: 12,
-    fontWeight: '600',
-    textTransform: 'capitalize',
-  },
-  image: {
-    width: '100%',
-    height: 200,
-    backgroundColor: '#F3F4F6',
-  },
-  scoreRow: {
-    flexDirection: 'row',
-    padding: 16,
-    borderTopWidth: 1,
-    borderTopColor: '#F3F4F6',
-  },
-  scoreItem: {
-    flex: 1,
-  },
-  scoreLabel: {
-    fontSize: 12,
-    color: '#6B7280',
-    marginBottom: 4,
-  },
-  scoreValue: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#111827',
-  },
-  actions: {
-    flexDirection: 'row',
-    padding: 16,
-    paddingTop: 0,
-    gap: 12,
-  },
-  actionButton: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  approveButton: {
-    backgroundColor: '#D1FAE5',
-  },
-  rejectButton: {
-    backgroundColor: '#FEE2E2',
-  },
-  approveText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#065F46',
-  },
-  rejectText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#DC2626',
-  },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 60,
-  },
-  emptyEmoji: {
-    fontSize: 48,
-    marginBottom: 16,
-  },
-  emptyText: {
-    fontSize: 16,
-    color: '#6B7280',
-  },
+  container: { flex: 1, backgroundColor: COLORS.bg },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: COLORS.bg },
+  loadingText: { marginTop: SPACING.md, color: COLORS.textSecondary, fontSize: FONT.md },
+  header: { padding: SPACING.xl, paddingTop: Platform.OS === 'ios' ? 60 : 48, backgroundColor: COLORS.bgCard, borderBottomWidth: 1, borderBottomColor: COLORS.border },
+  headerTitle: { fontSize: FONT.xxl, fontWeight: FONT.bold, color: COLORS.textPrimary },
+  headerSubtitle: { fontSize: FONT.sm, color: COLORS.textSecondary, marginTop: SPACING.xs },
+  filterRow: { flexDirection: 'row', padding: SPACING.lg, gap: SPACING.md, backgroundColor: COLORS.bgCard, borderBottomWidth: 1, borderBottomColor: COLORS.border },
+  filterButton: { flex: 1, paddingVertical: SPACING.md, borderRadius: RADIUS.sm, backgroundColor: COLORS.bgElevated, alignItems: 'center' },
+  filterActive: { backgroundColor: COLORS.accent },
+  filterText: { fontSize: FONT.sm, fontWeight: FONT.semibold, color: COLORS.textMuted },
+  filterTextActive: { color: COLORS.textPrimary },
+  listContent: { padding: SPACING.lg, paddingBottom: SPACING.section },
+  card: { backgroundColor: COLORS.bgCard, borderRadius: RADIUS.lg, marginBottom: SPACING.lg, overflow: 'hidden', borderWidth: 1, borderColor: COLORS.border, ...SHADOW.card },
+  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: SPACING.lg },
+  userId: { fontSize: FONT.sm, fontWeight: FONT.semibold, color: COLORS.textPrimary },
+  timestamp: { fontSize: FONT.xs, color: COLORS.textMuted, marginTop: 2 },
+  statusBadge: { paddingHorizontal: SPACING.md, paddingVertical: SPACING.xs + 2, borderRadius: RADIUS.round },
+  statusText: { fontSize: FONT.xs, fontWeight: FONT.semibold, textTransform: 'capitalize' },
+  image: { width: '100%', height: 200, backgroundColor: COLORS.bgElevated },
+  scoreRow: { flexDirection: 'row', padding: SPACING.lg, borderTopWidth: 1, borderTopColor: COLORS.border },
+  scoreItem: { flex: 1, alignItems: 'center' },
+  scoreLabel: { fontSize: FONT.xs, color: COLORS.textMuted, marginBottom: 2 },
+  scoreValue: { fontSize: FONT.md, fontWeight: FONT.semibold, color: COLORS.textPrimary },
+  actions: { flexDirection: 'row', padding: SPACING.lg, paddingTop: 0, gap: SPACING.md },
+  actionButton: { flex: 1, paddingVertical: SPACING.md, borderRadius: RADIUS.sm, alignItems: 'center' },
+  approveBtn: { backgroundColor: COLORS.accentGlow, borderWidth: 1, borderColor: COLORS.accentBorder },
+  rejectBtn: { backgroundColor: COLORS.errorBg, borderWidth: 1, borderColor: 'rgba(239,68,68,0.3)' },
+  approveText: { fontSize: FONT.sm, fontWeight: FONT.semibold, color: COLORS.accent },
+  rejectText: { fontSize: FONT.sm, fontWeight: FONT.semibold, color: COLORS.error },
+  emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 60 },
+  emptyEmoji: { fontSize: 48, marginBottom: SPACING.lg },
+  emptyText: { fontSize: FONT.md, color: COLORS.textSecondary },
 });
