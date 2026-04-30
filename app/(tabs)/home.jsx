@@ -13,6 +13,7 @@ import { useRouter } from 'expo-router';
 import { useAuthStore } from '../../src/store/authStore';
 import { getUserDoc } from '../../src/services/db';
 import { getTodayChallenge } from '../../src/services/challenge';
+import { hasUserSubmittedToday } from '../../src/services/submission';
 import { getRandomQuote } from '../../src/constants/messages';
 import { BADGES } from '../../src/constants/config';
 import { COLORS, FONT, SPACING, RADIUS, SHADOW } from '../../src/constants/theme';
@@ -22,6 +23,7 @@ export default function Home() {
   const { user } = useAuthStore();
   const [userData, setUserData] = useState(null);
   const [challenge, setChallenge] = useState(null);
+  const [alreadySubmitted, setAlreadySubmitted] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [quote, setQuote] = useState(getRandomQuote());
@@ -29,12 +31,14 @@ export default function Home() {
   const fetchData = useCallback(async () => {
     if (!user) return;
     try {
-      const [userDoc, todayChallenge] = await Promise.all([
+      const [userDoc, todayChallenge, submittedToday] = await Promise.all([
         getUserDoc(user.uid),
         getTodayChallenge(user.uid),
+        hasUserSubmittedToday(user.uid),
       ]);
       setUserData(userDoc);
       setChallenge(todayChallenge);
+      setAlreadySubmitted(submittedToday);
     } catch (error) {
       console.error('Error fetching home data:', error);
     } finally {
@@ -98,20 +102,20 @@ export default function Home() {
       {/* Today's Challenge Card */}
       <TouchableOpacity
         style={styles.challengeCard}
-        onPress={() => router.push('/(tabs)/challenge')}
-        activeOpacity={0.85}
+        onPress={() => !alreadySubmitted && router.push('/(tabs)/challenge')}
+        activeOpacity={alreadySubmitted ? 1 : 0.85}
       >
         <View style={styles.challengeHeader}>
           <Text style={styles.challengeLabel}>TODAY'S CHALLENGE</Text>
           <View style={[
             styles.statusBadge,
-            challenge?.status === 'completed' && styles.statusCompleted
+            (challenge?.status === 'completed' || alreadySubmitted) && styles.statusCompleted
           ]}>
             <Text style={[
               styles.statusText,
-              challenge?.status === 'completed' && styles.statusTextCompleted
+              (challenge?.status === 'completed' || alreadySubmitted) && styles.statusTextCompleted
             ]}>
-              {challenge?.status === 'completed' ? '✓ Done' : '→ Start'}
+              {(challenge?.status === 'completed' || alreadySubmitted) ? '✓ Done' : '→ Start'}
             </Text>
           </View>
         </View>
@@ -127,7 +131,11 @@ export default function Home() {
           </Text>
         </View>
 
-        {challenge?.status !== 'completed' && (
+        {alreadySubmitted ? (
+          <View style={[styles.startButton, { backgroundColor: 'transparent', borderWidth: 1, borderColor: COLORS.accent, shadowOpacity: 0 }]}>
+            <Text style={[styles.startButtonText, { color: COLORS.accent }]}>✅ You showed up today</Text>
+          </View>
+        ) : challenge?.status !== 'completed' && (
           <View style={styles.startButton}>
             <Text style={styles.startButtonText}>Start Session →</Text>
           </View>

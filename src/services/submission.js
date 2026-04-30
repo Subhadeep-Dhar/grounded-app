@@ -1,9 +1,19 @@
-import { db } from '../lib/firebase';
+import { db, increment, serverTimestamp } from './db';
 import { doc, setDoc, getDoc, updateDoc } from 'firebase/firestore';
 import { uploadImage } from './storage';
 import { calculateScore } from '../utils/scoring';
 import { getDistance } from '../utils/location';
 import { TIME_CONFIG, TRUST_CONFIG } from '../constants/config';
+
+/**
+ * Check if user has already submitted today.
+ */
+export const hasUserSubmittedToday = async (userId) => {
+  const today = new Date().toDateString();
+  const subRef = doc(db, 'submissions', `${userId}_${today}`);
+  const snap = await getDoc(subRef);
+  return snap.exists();
+};
 
 /**
  * Submit a completed challenge.
@@ -75,6 +85,7 @@ export const submitChallenge = async (userId, challenge, localImageUri, userLoca
     didInTime,
     locationOk,
     timestamp: Date.now(),
+    serverTimestamp: serverTimestamp(),
     clientTime: now.toISOString(),
   });
 
@@ -83,28 +94,40 @@ export const submitChallenge = async (userId, challenge, localImageUri, userLoca
     const userSnap = await getDoc(userRef);
     const user = userSnap.exists() ? userSnap.data() : {};
 
-    const today = new Date().toDateString();
-    let newStreak = 1;
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    
+    const startOfYesterday = new Date(startOfToday);
+    startOfYesterday.setDate(startOfYesterday.getDate() - 1);
+
+    let streakUpdate = 1; // Default reset to 1
     let canRecover = false;
 
-    if (user.lastCompletedDate) {
-      const last = new Date(user.lastCompletedDate);
-      const diff = (new Date(today) - last) / (1000 * 60 * 60 * 24);
+    if (user.lastSubmissionDate) {
+      // Handle both Timestamp and old string/number dates
+      const lastDate = user.lastSubmissionDate.seconds 
+        ? new Date(user.lastSubmissionDate.seconds * 1000)
+        : new Date(user.lastSubmissionDate);
+      
+      lastDate.setHours(0, 0, 0, 0);
 
-      if (diff === 1) {
-        newStreak = (user.streakCount || 0) + 1;
-      } else if (diff > 1) {
-        // Check recovery
+      const diffDays = Math.round((startOfToday - lastDate) / (1000 * 60 * 60 * 24));
+
+      if (diffDays === 1) {
+        // Submitted yesterday -> increment
+        streakUpdate = increment(1);
+      } else if (diffDays === 0) {
+        // Already submitted today (should be caught by duplicate check, but safety first)
+        streakUpdate = user.streakCount || 1;
+      } else if (diffDays > 1) {
+        // Missed a day
         if (user.canRecover) {
-          newStreak = (user.streakCount || 0) + 1;
+          streakUpdate = increment(1);
           canRecover = false;
         } else {
-          newStreak = 1;
+          streakUpdate = 1;
           canRecover = true;
         }
-      } else {
-        // Same day
-        newStreak = user.streakCount || 1;
       }
     }
 
@@ -114,9 +137,10 @@ export const submitChallenge = async (userId, challenge, localImageUri, userLoca
     if (status === 'flagged') trustDelta = TRUST_CONFIG.flaggedDelta;
 
     await updateDoc(userRef, {
-      totalCompletions: (user.totalCompletions || 0) + 1,
-      streakCount: newStreak,
-      lastCompletedDate: today,
+      totalCompletions: increment(1),
+      streakCount: streakUpdate,
+      lastSubmissionDate: serverTimestamp(),
+      lastCompletedDate: new Date().toDateString(), // Keep for legacy UI if needed
       canRecover,
       trustScore: Math.max(
         TRUST_CONFIG.min,

@@ -15,10 +15,14 @@ import { useAuthStore } from '../../src/store/authStore';
 import { getTodayChallenge } from '../../src/services/challenge';
 import { getCurrentLocation, watchUserLocation } from '../../src/services/gps';
 import { captureImage } from '../../src/services/camera';
-import { submitChallenge } from '../../src/services/submission';
+import { submitChallenge, hasUserSubmittedToday } from '../../src/services/submission';
 import { sendArrivalNotification, sendCompletionNotification } from '../../src/services/notifications';
 import { getDistance } from '../../src/utils/location';
 import { COLORS, FONT, SPACING, RADIUS, SHADOW, STAY_DURATION } from '../../src/constants/theme';
+import { getUserDoc } from '../../src/services/db';
+import { doc, setDoc } from 'firebase/firestore';
+import { db } from '../../src/lib/firebase';
+import { runTransaction } from 'firebase/firestore';
 
 const { width } = Dimensions.get('window');
 const isNative = Platform.OS !== 'web';
@@ -64,12 +68,27 @@ export default function Challenge() {
 
   const fetchChallenge = useCallback(async () => {
     if (!user) return;
+
     try {
+      // GET USER DATA
+      const userDoc = await getUserDoc(user.uid);
+
+      // BLOCK IF ALREADY COMPLETED
+      const submittedToday = await hasUserSubmittedToday(user.uid);
+      if (submittedToday) {
+        setSessionState('completed'); // reuse completed UI
+        setLoading(false);
+        return;
+      }
+
       const todayChallenge = await getTodayChallenge(user.uid);
+
       setChallenge(todayChallenge);
+
       if (todayChallenge.status === 'completed') {
         setSessionState('completed');
       }
+
     } catch (error) {
       console.error('Error fetching challenge:', error);
     } finally {
@@ -199,24 +218,43 @@ export default function Challenge() {
   };
 
   const handleSubmit = async () => {
-    if (!mediaUrl) {
-      Alert.alert('Required', 'Please capture a photo before submitting.');
-      return;
-    }
-    if (stayTimer < STAY_DURATION) {
-      Alert.alert('Wait', `Stay for ${Math.ceil((STAY_DURATION - stayTimer) / 60)} more minute(s).`);
-      return;
-    }
+    if (submitting) return; // prevent double click
 
     setSubmitting(true);
+
     try {
-      const result = await submitChallenge(user.uid, challenge, mediaUrl, userLocation);
+      // validations
+      if (!mediaUrl) {
+        Alert.alert('Required', 'Please capture a photo before submitting.');
+        setSubmitting(false);
+        return;
+      }
+
+      if (stayTimer < STAY_DURATION) {
+        Alert.alert(
+          'Wait',
+          `Stay for ${Math.ceil((STAY_DURATION - stayTimer) / 60)} more minute(s).`
+        );
+        setSubmitting(false);
+        return;
+      }
+
+      // submit challenge
+      const result = await submitChallenge(
+        user.uid,
+        challenge,
+        mediaUrl,
+        userLocation
+      );
+
       sendCompletionNotification();
       setSessionState('completed');
+
       Alert.alert(
         '🎉 Challenge Complete!',
         `Score: ${result.score} • Status: ${result.status}\nGreat job showing up today.`
       );
+
     } catch (error) {
       console.error('Submit error:', error);
       Alert.alert('Submission Error', error.message || 'Failed to submit.');
@@ -330,13 +368,13 @@ export default function Challenge() {
           <View style={styles.statusTextContainer}>
             <Text style={styles.statusTitle}>
               {sessionState === 'tracking' ? 'Navigating...' :
-               sessionState === 'arrived' ? 'You Arrived!' :
-               'Stay Put!'}
+                sessionState === 'arrived' ? 'You Arrived!' :
+                  'Stay Put!'}
             </Text>
             <Text style={styles.statusSubtitle}>
               {sessionState === 'tracking' ? getDistanceText(distance) :
-               sessionState === 'arrived' ? 'Hold your position' :
-               `${formatTime(stayTimer)} / ${formatTime(STAY_DURATION)}`}
+                sessionState === 'arrived' ? 'Hold your position' :
+                  `${formatTime(stayTimer)} / ${formatTime(STAY_DURATION)}`}
             </Text>
           </View>
         </View>
@@ -427,7 +465,7 @@ export default function Challenge() {
             <Text style={styles.mapEmoji}>🗺️</Text>
             <Text style={styles.mapText}>
               {sessionState === 'tracking' ? 'Tracking your location...' :
-               'Session in progress'}
+                'Session in progress'}
             </Text>
             {userLocation && (
               <Text style={styles.coordText}>

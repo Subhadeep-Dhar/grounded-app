@@ -9,8 +9,13 @@ import { createUserDoc } from './db';
 
 export const register = async (email, password) => {
   const res = await createUserWithEmailAndPassword(auth, email, password);
-  await createUserDoc(res.user);
-  return res.user;
+
+  const user = res.user;
+
+  // 🔥 ensure user doc is created properly
+  await createUserDoc(user);
+
+  return user;
 };
 
 export const login = (email, password) =>
