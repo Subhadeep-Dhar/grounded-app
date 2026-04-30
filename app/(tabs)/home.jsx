@@ -188,17 +188,33 @@ export default function Home() {
           <Text style={styles.breakdownTitle}>How it works:</Text>
           <View style={styles.breakdownRow}>
             <View style={styles.breakdownItem}>
-              <Text style={styles.breakdownEmoji}>✅</Text>
+              <Text style={styles.breakdownEmoji}>🚀</Text>
               <View>
-                <Text style={styles.breakdownLabel}>Approved</Text>
-                <Text style={styles.breakdownValue}>+2 Points</Text>
+                <Text style={styles.breakdownLabel}>Score ≥ 70</Text>
+                <Text style={styles.breakdownValue}>+score × 0.1</Text>
               </View>
             </View>
             <View style={styles.breakdownItem}>
+              <Text style={styles.breakdownEmoji}>👍</Text>
+              <View>
+                <Text style={styles.breakdownLabel}>Score 40-69</Text>
+                <Text style={styles.breakdownValue}>+score × 0.05</Text>
+              </View>
+            </View>
+          </View>
+          <View style={styles.breakdownRow}>
+            <View style={styles.breakdownItem}>
               <Text style={styles.breakdownEmoji}>⚠️</Text>
               <View>
-                <Text style={styles.breakdownLabel}>Flagged</Text>
-                <Text style={styles.breakdownValue}>-1 Point</Text>
+                <Text style={styles.breakdownLabel}>Score &lt; 40</Text>
+                <Text style={styles.breakdownValue}>-5 Points</Text>
+              </View>
+            </View>
+            <View style={styles.breakdownItem}>
+              <Text style={styles.breakdownEmoji}>🔥</Text>
+              <View>
+                <Text style={styles.breakdownLabel}>Streak ≥ 3</Text>
+                <Text style={styles.breakdownValue}>+2 Bonus</Text>
               </View>
             </View>
           </View>

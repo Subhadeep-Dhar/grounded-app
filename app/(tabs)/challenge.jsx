@@ -9,6 +9,8 @@ import {
   Platform,
   ScrollView,
   Dimensions,
+  Share,
+  Image,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuthStore } from '../../src/store/authStore';
@@ -49,10 +51,10 @@ export default function Challenge() {
   const [loading, setLoading] = useState(true);
   const [sessionState, setSessionState] = useState('idle'); // idle, tracking, arrived, staying, completed
   const [userLocation, setUserLocation] = useState(null);
-  const [path, setPath] = useState([]);
   const [stayTimer, setStayTimer] = useState(0);
   const [mediaUrl, setMediaUrl] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  const [submissionResult, setSubmissionResult] = useState(null);
   const [locationError, setLocationError] = useState(null);
   const [distance, setDistance] = useState(null);
 
@@ -141,7 +143,6 @@ export default function Challenge() {
         longitude: location.coords.longitude,
       };
       setUserLocation(newLoc);
-      setPath([newLoc]);
       setSessionState('tracking');
 
       // Calculate initial distance
@@ -160,7 +161,6 @@ export default function Challenge() {
           longitude: loc.coords.longitude,
         };
         setUserLocation(updatedLoc);
-        setPath(prev => [...prev, updatedLoc]);
 
         if (challenge) {
           const dist = getDistance(
@@ -217,6 +217,18 @@ export default function Challenge() {
     }
   };
 
+  const handleShare = async () => {
+    if (!mediaUrl) return;
+    
+    try {
+      await Share.share({
+        message: `🎯 I just completed today's Grounded challenge!\n\n📍 ${challenge?.location}\n\n💪 Showing up matters. Join me at Grounded!`,
+      });
+    } catch (error) {
+      console.error('Share error:', error);
+    }
+  };
+
   const handleSubmit = async () => {
     if (submitting) return; // prevent double click
 
@@ -242,10 +254,12 @@ export default function Challenge() {
       // submit challenge
       const result = await submitChallenge(
         user.uid,
-        challenge,
+        { ...challenge, stayTime: stayTimer },
         mediaUrl,
         userLocation
       );
+
+      setSubmissionResult(result);
 
       sendCompletionNotification();
       setSessionState('completed');
@@ -282,14 +296,54 @@ export default function Challenge() {
 
   // ─── COMPLETED STATE ────────────────────────
   if (sessionState === 'completed') {
+    const res = submissionResult || {};
+    const statusLabel = res.score >= 80 ? '🔥 Excellent' : res.score >= 60 ? '👍 Good' : '⚠️ Needs improvement';
+    const statusColor = res.score >= 80 ? COLORS.success : res.score >= 60 ? COLORS.warning : COLORS.error;
+
     return (
       <View style={styles.container}>
-        <View style={styles.completedContainer}>
+        <ScrollView contentContainerStyle={styles.completedContainer}>
           <Text style={styles.completedEmoji}>🎉</Text>
           <Text style={styles.completedTitle}>Challenge Complete!</Text>
+          
+          <View style={[styles.statusBadgeLarge, { backgroundColor: statusColor + '20', borderColor: statusColor }]}>
+            <Text style={[styles.statusBadgeTextLarge, { color: statusColor }]}>{statusLabel}</Text>
+          </View>
+
+          <View style={styles.scoreBreakdownCard}>
+            <View style={styles.mainScoreRow}>
+              <Text style={styles.mainScoreLabel}>Total Score</Text>
+              <Text style={styles.mainScoreValue}>{res.score || 0}</Text>
+            </View>
+            
+            <View style={styles.breakdownDivider} />
+            
+            <View style={styles.breakdownRow}>
+              <Text style={styles.breakdownLabel}>Location Accuracy</Text>
+              <Text style={styles.breakdownValue}>+{res.locationScore || 0}</Text>
+            </View>
+            <View style={styles.breakdownRow}>
+              <Text style={styles.breakdownLabel}>Time Completion</Text>
+              <Text style={styles.breakdownValue}>+{res.timeScore || 0}</Text>
+            </View>
+            <View style={styles.breakdownRow}>
+              <Text style={styles.breakdownLabel}>Photo Proof</Text>
+              <Text style={styles.breakdownValue}>+{res.proofScore || 0}</Text>
+            </View>
+            <View style={styles.breakdownRow}>
+              <Text style={styles.breakdownLabel}>Session Integrity</Text>
+              <Text style={styles.breakdownValue}>+{res.integrityScore || 0}</Text>
+            </View>
+            <View style={styles.breakdownRow}>
+              <Text style={styles.breakdownLabel}>Streak Bonus</Text>
+              <Text style={styles.breakdownValue}>+{res.streakBonus || 0}</Text>
+            </View>
+          </View>
+
           <Text style={styles.completedText}>
-            Great job showing up today.{'\n'}Come back tomorrow for another challenge.
+            Great job showing up today.{'\n'}Your trust score has been boosted.
           </Text>
+
           <TouchableOpacity
             style={styles.homeButton}
             onPress={() => router.push('/(tabs)/home')}
@@ -297,7 +351,7 @@ export default function Challenge() {
           >
             <Text style={styles.homeButtonText}>Back to Home</Text>
           </TouchableOpacity>
-        </View>
+        </ScrollView>
       </View>
     );
   }
@@ -450,15 +504,6 @@ export default function Challenge() {
               fillColor="rgba(16, 185, 129, 0.1)"
               strokeWidth={2}
             />
-
-            {/* Path Polyline */}
-            {path.length > 1 && (
-              <Polyline
-                coordinates={path}
-                strokeColor={COLORS.accent}
-                strokeWidth={3}
-              />
-            )}
           </MapView>
         ) : (
           <View style={styles.mapFallback}>
@@ -484,10 +529,23 @@ export default function Challenge() {
         {/* Camera Section */}
         <View style={styles.cameraSection}>
           {mediaUrl ? (
-            <View style={styles.photoPreview}>
-              <Text style={styles.photoEmoji}>✅</Text>
-              <Text style={styles.photoText}>Photo captured</Text>
-            </View>
+            <TouchableOpacity
+              style={styles.photoPreview}
+              onPress={handleCapture}
+              activeOpacity={0.8}
+            >
+              <View style={styles.photoPreviewContent}>
+                <Image source={{ uri: mediaUrl }} style={styles.photoThumbnail} />
+                <View style={styles.photoInfo}>
+                  <Text style={styles.photoEmoji}>✅</Text>
+                  <Text style={styles.photoText}>Photo captured</Text>
+                  <Text style={styles.photoHint}>Tap to retake</Text>
+                </View>
+              </View>
+              <Text style={styles.photoDeleteNote}>
+                ⏰ This photo will be visible in the feed for 1 day, then automatically deleted.
+              </Text>
+            </TouchableOpacity>
           ) : (
             <TouchableOpacity
               style={styles.captureButton}
@@ -525,6 +583,17 @@ export default function Challenge() {
             </Text>
           )}
         </TouchableOpacity>
+
+        {/* Share Button */}
+        {mediaUrl && stayTimer >= STAY_DURATION && (
+          <TouchableOpacity
+            style={styles.shareButton}
+            onPress={handleShare}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.shareButtonText}>📤 Share to Social Media</Text>
+          </TouchableOpacity>
+        )}
       </View>
     </View>
   );
@@ -793,23 +862,46 @@ const styles = StyleSheet.create({
   },
   cameraSection: {},
   photoPreview: {
+    backgroundColor: COLORS.bgCard,
+    borderRadius: RADIUS.md,
+    padding: SPACING.md,
+    borderWidth: 1,
+    borderColor: COLORS.accent,
+  },
+  photoPreviewContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: COLORS.accentGlow,
+  },
+  photoThumbnail: {
+    width: 60,
+    height: 60,
     borderRadius: RADIUS.md,
-    padding: SPACING.lg,
-    borderWidth: 1,
-    borderColor: COLORS.accentBorder,
+    marginRight: SPACING.md,
+  },
+  photoInfo: {
+    flex: 1,
   },
   photoEmoji: {
     fontSize: 20,
-    marginRight: SPACING.sm,
   },
   photoText: {
     fontSize: FONT.md,
     color: COLORS.accent,
     fontWeight: FONT.semibold,
+  },
+  photoHint: {
+    fontSize: FONT.xs,
+    color: COLORS.textMuted,
+    marginTop: 2,
+  },
+  photoDeleteNote: {
+    fontSize: FONT.xs,
+    color: COLORS.textMuted,
+    marginTop: SPACING.md,
+    paddingTop: SPACING.md,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+    textAlign: 'center',
   },
   captureButton: {
     flexDirection: 'row',
@@ -847,29 +939,102 @@ const styles = StyleSheet.create({
     fontWeight: FONT.bold,
   },
 
+  // Share
+  shareButton: {
+    backgroundColor: COLORS.bgCard,
+    borderRadius: RADIUS.md,
+    padding: SPACING.lg,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  shareButtonText: {
+    color: COLORS.textSecondary,
+    fontSize: FONT.md,
+    fontWeight: FONT.medium,
+  },
+
   // Completed
   completedContainer: {
-    flex: 1,
+    flexGrow: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: SPACING.section,
+    padding: SPACING.xxl,
+    paddingTop: 60,
   },
   completedEmoji: {
     fontSize: 72,
-    marginBottom: SPACING.xxl,
+    marginBottom: SPACING.lg,
   },
   completedTitle: {
     fontSize: FONT.xxxl,
-    fontWeight: FONT.extrabold,
+    fontWeight: FONT.bold,
     color: COLORS.textPrimary,
     marginBottom: SPACING.md,
+    textAlign: 'center',
+  },
+  statusBadgeLarge: {
+    paddingHorizontal: SPACING.lg,
+    paddingVertical: SPACING.sm,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    marginBottom: SPACING.xl,
+  },
+  statusBadgeTextLarge: {
+    fontSize: FONT.md,
+    fontWeight: FONT.bold,
+  },
+  scoreBreakdownCard: {
+    width: '100%',
+    backgroundColor: COLORS.bgCard,
+    borderRadius: RADIUS.lg,
+    padding: SPACING.xl,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    marginBottom: SPACING.xl,
+    ...SHADOW.card,
+  },
+  mainScoreRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: SPACING.md,
+  },
+  mainScoreLabel: {
+    fontSize: FONT.lg,
+    fontWeight: FONT.semibold,
+    color: COLORS.textSecondary,
+  },
+  mainScoreValue: {
+    fontSize: 42,
+    fontWeight: FONT.extrabold,
+    color: COLORS.accent,
+  },
+  breakdownDivider: {
+    height: 1,
+    backgroundColor: COLORS.border,
+    marginBottom: SPACING.lg,
+  },
+  breakdownRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: SPACING.md,
+  },
+  breakdownLabel: {
+    fontSize: FONT.sm,
+    color: COLORS.textSecondary,
+  },
+  breakdownValue: {
+    fontSize: FONT.sm,
+    fontWeight: FONT.bold,
+    color: COLORS.textPrimary,
   },
   completedText: {
     fontSize: FONT.md,
     color: COLORS.textSecondary,
     textAlign: 'center',
+    lineHeight: 24,
     marginBottom: SPACING.xxxl,
-    lineHeight: 22,
   },
   homeButton: {
     backgroundColor: COLORS.accent,
