@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Platform,
+  Image,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuthStore } from '../../src/store/authStore';
@@ -85,9 +86,16 @@ export default function Home() {
     >
       {/* Header */}
       <View style={styles.header}>
-        <View>
-          <Text style={styles.greeting}>{getGreeting()}</Text>
-          <Text style={styles.subGreeting}>{quote}</Text>
+        <View style={styles.headerLeft}>
+          <Image 
+            source={require('../../assets/logo.png')} 
+            style={styles.headerLogo} 
+            resizeMode="contain"
+          />
+          <View>
+            <Text style={styles.greeting}>{getGreeting()}</Text>
+            <Text style={styles.subGreeting}>{quote}</Text>
+          </View>
         </View>
         <TouchableOpacity
           style={styles.profileButton}
@@ -292,6 +300,15 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: SPACING.xxl,
+  },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.md,
+  },
+  headerLogo: {
+    width: 40,
+    height: 40,
   },
   greeting: {
     fontSize: FONT.xxl,

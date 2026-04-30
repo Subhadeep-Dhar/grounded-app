@@ -10,6 +10,7 @@ import {
   Platform,
   ScrollView,
   Alert,
+  Image,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { register } from '../../src/services/auth';
@@ -65,9 +66,11 @@ export default function Register() {
       >
         {/* Header */}
         <View style={styles.logoContainer}>
-          <View style={styles.logoCircle}>
-            <Text style={styles.logoEmoji}>🌱</Text>
-          </View>
+          <Image 
+            source={require('../../assets/logo.png')} 
+            style={styles.logoImage} 
+            resizeMode="contain"
+          />
           <Text style={styles.title}>Create Account</Text>
           <Text style={styles.subtitle}>Start your journey today</Text>
         </View>
@@ -172,20 +175,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: SPACING.xxxl,
   },
-  logoCircle: {
-    width: 88,
-    height: 88,
-    borderRadius: 44,
-    backgroundColor: COLORS.accentGlow,
-    borderWidth: 2,
-    borderColor: COLORS.accentBorder,
-    justifyContent: 'center',
-    alignItems: 'center',
+  logoImage: {
+    width: 90,
+    height: 90,
     marginBottom: SPACING.lg,
-    ...SHADOW.glow,
-  },
-  logoEmoji: {
-    fontSize: 42,
   },
   title: {
     fontSize: FONT.xxxl,

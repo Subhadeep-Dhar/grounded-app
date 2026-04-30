@@ -10,6 +10,7 @@ import {
   Platform,
   ScrollView,
   Alert,
+  Image,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { login } from '../../src/services/auth';
@@ -63,9 +64,11 @@ export default function Login() {
       >
         {/* Logo */}
         <View style={styles.logoContainer}>
-          <View style={styles.logoCircle}>
-            <Text style={styles.logoEmoji}>🌱</Text>
-          </View>
+          <Image 
+            source={require('../../assets/logo.png')} 
+            style={styles.logoImage} 
+            resizeMode="contain"
+          />
           <Text style={styles.title}>Grounded</Text>
           <Text style={styles.subtitle}>Show up. Every day.</Text>
         </View>
@@ -155,20 +158,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: SPACING.section,
   },
-  logoCircle: {
-    width: 88,
-    height: 88,
-    borderRadius: 44,
-    backgroundColor: COLORS.accentGlow,
-    borderWidth: 2,
-    borderColor: COLORS.accentBorder,
-    justifyContent: 'center',
-    alignItems: 'center',
+  logoImage: {
+    width: 100,
+    height: 100,
     marginBottom: SPACING.lg,
-    ...SHADOW.glow,
-  },
-  logoEmoji: {
-    fontSize: 42,
   },
   title: {
     fontSize: FONT.hero,
