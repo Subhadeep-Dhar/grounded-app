@@ -182,6 +182,27 @@ export default function Home() {
            (userData?.trustScore || 50) >= 60 ? 'Good progress — keep showing up.' :
            'Show up daily to build trust.'}
         </Text>
+
+        {/* Breakdown */}
+        <View style={styles.breakdown}>
+          <Text style={styles.breakdownTitle}>How it works:</Text>
+          <View style={styles.breakdownRow}>
+            <View style={styles.breakdownItem}>
+              <Text style={styles.breakdownEmoji}>✅</Text>
+              <View>
+                <Text style={styles.breakdownLabel}>Approved</Text>
+                <Text style={styles.breakdownValue}>+2 Points</Text>
+              </View>
+            </View>
+            <View style={styles.breakdownItem}>
+              <Text style={styles.breakdownEmoji}>⚠️</Text>
+              <View>
+                <Text style={styles.breakdownLabel}>Flagged</Text>
+                <Text style={styles.breakdownValue}>-1 Point</Text>
+              </View>
+            </View>
+          </View>
+        </View>
       </View>
 
       {/* Badges Section */}
@@ -429,6 +450,45 @@ const styles = StyleSheet.create({
   trustHint: {
     fontSize: FONT.xs,
     color: COLORS.textMuted,
+    marginBottom: SPACING.lg,
+  },
+  breakdown: {
+    backgroundColor: COLORS.bgElevated,
+    borderRadius: RADIUS.md,
+    padding: SPACING.md,
+    marginTop: SPACING.md,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  breakdownTitle: {
+    fontSize: 10,
+    fontWeight: FONT.bold,
+    color: COLORS.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    marginBottom: SPACING.sm,
+  },
+  breakdownRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  breakdownItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+  },
+  breakdownEmoji: {
+    fontSize: 16,
+  },
+  breakdownLabel: {
+    fontSize: 11,
+    fontWeight: FONT.semibold,
+    color: COLORS.textPrimary,
+  },
+  breakdownValue: {
+    fontSize: 10,
+    color: COLORS.accent,
+    fontWeight: FONT.bold,
   },
 
   // Badges

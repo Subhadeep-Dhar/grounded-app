@@ -97,36 +97,40 @@ export const submitChallenge = async (userId, challenge, localImageUri, userLoca
     const startOfToday = new Date();
     startOfToday.setHours(0, 0, 0, 0);
     
-    const startOfYesterday = new Date(startOfToday);
-    startOfYesterday.setDate(startOfYesterday.getDate() - 1);
-
     let streakUpdate = 1; // Default reset to 1
     let canRecover = false;
 
     if (user.lastSubmissionDate) {
-      // Handle both Timestamp and old string/number dates
-      const lastDate = user.lastSubmissionDate.seconds 
-        ? new Date(user.lastSubmissionDate.seconds * 1000)
-        : new Date(user.lastSubmissionDate);
+      // Handle Timestamp (Web/Mobile), Number, or String
+      let lastDate;
+      if (user.lastSubmissionDate?.toDate) {
+        lastDate = user.lastSubmissionDate.toDate();
+      } else if (typeof user.lastSubmissionDate === 'number' || typeof user.lastSubmissionDate === 'string') {
+        lastDate = new Date(user.lastSubmissionDate);
+      } else if (user.lastSubmissionDate?.seconds) {
+        lastDate = new Date(user.lastSubmissionDate.seconds * 1000);
+      }
       
-      lastDate.setHours(0, 0, 0, 0);
+      if (lastDate) {
+        lastDate.setHours(0, 0, 0, 0);
+        const diffMs = startOfToday.getTime() - lastDate.getTime();
+        const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
 
-      const diffDays = Math.round((startOfToday - lastDate) / (1000 * 60 * 60 * 24));
-
-      if (diffDays === 1) {
-        // Submitted yesterday -> increment
-        streakUpdate = increment(1);
-      } else if (diffDays === 0) {
-        // Already submitted today (should be caught by duplicate check, but safety first)
-        streakUpdate = user.streakCount || 1;
-      } else if (diffDays > 1) {
-        // Missed a day
-        if (user.canRecover) {
+        if (diffDays === 1) {
+          // Submitted yesterday -> increment
           streakUpdate = increment(1);
-          canRecover = false;
-        } else {
-          streakUpdate = 1;
-          canRecover = true;
+        } else if (diffDays === 0) {
+          // Already submitted today (safety)
+          streakUpdate = user.streakCount || 1;
+        } else if (diffDays > 1) {
+          // Missed a day
+          if (user.canRecover) {
+            streakUpdate = increment(1);
+            canRecover = false;
+          } else {
+            streakUpdate = 1;
+            canRecover = true;
+          }
         }
       }
     }

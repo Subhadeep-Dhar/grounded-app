@@ -14,8 +14,11 @@ import {
 import { db } from '../src/lib/firebase';
 import { collection, getDocs, query, where, updateDoc, doc } from 'firebase/firestore';
 import { COLORS, FONT, SPACING, RADIUS, SHADOW } from '../src/constants/theme';
+import { useAuthStore } from '../src/store/authStore';
+import { Redirect } from 'expo-router';
 
 export default function Admin() {
+  const { user, loading: authLoading } = useAuthStore();
   const [submissions, setSubmissions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -119,6 +122,9 @@ export default function Admin() {
       )}
     </View>
   );
+
+  if (authLoading) return null;
+  if (!user) return <Redirect href="/(auth)/login" />;
 
   if (loading) {
     return (
