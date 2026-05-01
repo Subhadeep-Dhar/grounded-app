@@ -119,7 +119,10 @@ export default function Challenge() {
   // Cleanup watch
   useEffect(() => {
     return () => {
-      if (watchSub.current) watchSub.current.remove();
+      if (watchSub.current) {
+        watchSub.current.remove();
+        watchSub.current = null;
+      }
     };
   }, []);
 
@@ -133,61 +136,108 @@ export default function Challenge() {
   };
 
   const startSession = async () => {
+    console.log("START SESSION");
+
     setLocationError(null);
     setLoading(true);
 
     try {
+      // STEP 1: Get location safely
       const location = await getCurrentLocation();
+
+      if (!location || !location.coords) {
+        setLocationError('Unable to fetch location. Please try again.');
+        Alert.alert('Location Error', 'Could not get your location.');
+        return;
+      }
+
+      // Small delay to stabilize GPS after permission
+      await new Promise(resolve => setTimeout(resolve, 800));
+
       const newLoc = {
         latitude: location.coords.latitude,
         longitude: location.coords.longitude,
       };
+
       setUserLocation(newLoc);
       setSessionState('tracking');
 
-      // Calculate initial distance
+      // STEP 2: Initial distance calculation
       if (challenge) {
         const dist = getDistance(
-          newLoc.latitude, newLoc.longitude,
-          challenge.latitude, challenge.longitude
+          newLoc.latitude,
+          newLoc.longitude,
+          challenge.latitude,
+          challenge.longitude
         );
         setDistance(dist);
       }
 
-      // Start watching
-      watchSub.current = await watchUserLocation((loc) => {
-        const updatedLoc = {
-          latitude: loc.coords.latitude,
-          longitude: loc.coords.longitude,
-        };
-        setUserLocation(updatedLoc);
-
-        if (challenge) {
-          const dist = getDistance(
-            updatedLoc.latitude, updatedLoc.longitude,
-            challenge.latitude, challenge.longitude
-          );
-          setDistance(dist);
-
-          // Auto-arrive
-          if (dist <= challenge.radius && sessionStateRef.current === 'tracking') {
-            handleArrival();
+      // STEP 3: Start watcher safely (delayed but controlled)
+      const startWatcher = async () => {
+        try {
+          // Prevent duplicate watchers
+          if (watchSub.current) {
+            watchSub.current.remove();
+            watchSub.current = null;
           }
-        }
 
-        // Animate map camera
-        if (mapRef.current) {
-          mapRef.current.animateToRegion({
-            ...updatedLoc,
-            latitudeDelta: 0.005,
-            longitudeDelta: 0.005,
-          }, 500);
+          watchSub.current = await watchUserLocation((loc) => {
+            if (!loc || !loc.coords) return;
+
+            const updatedLoc = {
+              latitude: loc.coords.latitude,
+              longitude: loc.coords.longitude,
+            };
+
+            setUserLocation(updatedLoc);
+
+            if (challenge) {
+              const dist = getDistance(
+                updatedLoc.latitude,
+                updatedLoc.longitude,
+                challenge.latitude,
+                challenge.longitude
+              );
+
+              setDistance(dist);
+
+              if (
+                dist <= challenge.radius &&
+                sessionStateRef.current === 'tracking'
+              ) {
+                handleArrival();
+              }
+            }
+
+            // Safe map animation
+            if (mapRef.current) {
+              try {
+                mapRef.current.animateToRegion(
+                  {
+                    ...updatedLoc,
+                    latitudeDelta: 0.005,
+                    longitudeDelta: 0.005,
+                  },
+                  500
+                );
+              } catch (e) {
+                console.log("Map animation error:", e);
+              }
+            }
+          });
+        } catch (e) {
+          console.log("Watcher error prevented:", e);
         }
-      });
+      };
+
+      // Delay execution (safe scheduling)
+      setTimeout(startWatcher, 1200);
+
     } catch (error) {
-      console.error('Location error:', error);
+      console.log("Start session error:", error);
       setLocationError('Unable to get location. Please enable GPS.');
-      Alert.alert('Location Error', 'Please enable location services and try again.');
+      Alert.alert('Error', 'Please enable location services and try again.');
     } finally {
       setLoading(false);
     }
@@ -219,7 +269,7 @@ export default function Challenge() {
 
   const handleShare = async () => {
     if (!mediaUrl) return;
-    
+
     try {
       await Share.share({
         message: `🎯 I just completed today's Grounded challenge!\n\n📍 ${challenge?.location}\n\n💪 Showing up matters. Join me at Grounded!`,
@@ -305,7 +355,7 @@ export default function Challenge() {
         <ScrollView contentContainerStyle={styles.completedContainer}>
           <Text style={styles.completedEmoji}>🎉</Text>
           <Text style={styles.completedTitle}>Challenge Complete!</Text>
-          
+
           <View style={[styles.statusBadgeLarge, { backgroundColor: statusColor + '20', borderColor: statusColor }]}>
             <Text style={[styles.statusBadgeTextLarge, { color: statusColor }]}>{statusLabel}</Text>
           </View>
@@ -315,9 +365,9 @@ export default function Challenge() {
               <Text style={styles.mainScoreLabel}>Total Score</Text>
               <Text style={styles.mainScoreValue}>{res.score || 0}</Text>
             </View>
-            
+
             <View style={styles.breakdownDivider} />
-            
+
             <View style={styles.breakdownRow}>
               <Text style={styles.breakdownLabel}>Location Accuracy</Text>
               <Text style={styles.breakdownValue}>+{res.locationScore || 0}</Text>
