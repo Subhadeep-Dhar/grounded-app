@@ -151,7 +151,7 @@ export default function Challenge() {
         return;
       }
 
-      // Small delay to stabilize GPS after permission
+      // Small delay to stabilize GPS after permission // will be changed later
       await new Promise(resolve => setTimeout(resolve, 800));
 
       const newLoc = {
