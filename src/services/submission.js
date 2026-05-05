@@ -16,6 +16,16 @@ export const hasUserSubmittedToday = async (userId) => {
 };
 
 /**
+ * Fetch today's submission details.
+ */
+export const getTodaySubmission = async (userId) => {
+  const today = new Date().toDateString();
+  const subRef = doc(db, 'submissions', `${userId}_${today}`);
+  const snap = await getDoc(subRef);
+  return snap.exists() ? snap.data() : null;
+};
+
+/**
  * Submit a completed challenge.
  * Uploads image, verifies location, calculates score, updates user stats.
  */

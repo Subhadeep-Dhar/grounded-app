@@ -103,7 +103,7 @@ export default function Feed() {
         <Image
           source={{ uri: item.mediaUrl }}
           style={styles.image}
-          resizeMode="cover"
+          resizeMode="contain"
         />
       )}
 

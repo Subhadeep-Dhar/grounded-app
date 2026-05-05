@@ -12,12 +12,14 @@ import {
   Share,
   Image,
 } from 'react-native';
+import * as Sharing from 'expo-sharing';
+import { captureRef } from 'react-native-view-shot';
 import { useRouter } from 'expo-router';
 import { useAuthStore } from '../../src/store/authStore';
 import { getTodayChallenge } from '../../src/services/challenge';
 import { getCurrentLocation, watchUserLocation } from '../../src/services/gps';
 import { captureImage } from '../../src/services/camera';
-import { submitChallenge, hasUserSubmittedToday } from '../../src/services/submission';
+import { submitChallenge, hasUserSubmittedToday, getTodaySubmission } from '../../src/services/submission';
 import { sendArrivalNotification, sendCompletionNotification } from '../../src/services/notifications';
 import { getDistance } from '../../src/utils/location';
 import { COLORS, FONT, SPACING, RADIUS, SHADOW, STAY_DURATION } from '../../src/constants/theme';
@@ -61,6 +63,7 @@ export default function Challenge() {
   const watchSub = useRef(null);
   const stayInterval = useRef(null);
   const mapRef = useRef(null);
+  const watermarkRef = useRef(null);
   const sessionStateRef = useRef(sessionState);
 
   // Keep ref in sync
@@ -78,6 +81,9 @@ export default function Challenge() {
       // BLOCK IF ALREADY COMPLETED
       const submittedToday = await hasUserSubmittedToday(user.uid);
       if (submittedToday) {
+        const subData = await getTodaySubmission(user.uid);
+        setSubmissionResult(subData);
+        setMediaUrl(subData?.mediaUrl);
         setSessionState('completed'); // reuse completed UI
         setLoading(false);
         return;
@@ -268,14 +274,30 @@ export default function Challenge() {
   };
 
   const handleShare = async () => {
-    if (!mediaUrl) return;
+    if (!mediaUrl || !watermarkRef.current) return;
 
     try {
-      await Share.share({
-        message: `🎯 I just completed today's Grounded challenge!\n\n📍 ${challenge?.location}\n\n💪 Showing up matters. Join me at Grounded!`,
+      setLoading(true);
+      const uri = await captureRef(watermarkRef, {
+        format: 'png',
+        quality: 1,
       });
+
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(uri, {
+          dialogTitle: 'Share your achievement',
+          UTI: 'public.png',
+        });
+      } else {
+        await Share.share({
+          message: `🎯 I successfully completed today's Grounded challenge!\n\n📍 ${challenge?.location}\n\n#grounded #mitmanipal #discipline`,
+        });
+      }
     } catch (error) {
       console.error('Share error:', error);
+      Alert.alert('Share Error', 'Could not generate shareable image.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -635,7 +657,7 @@ export default function Challenge() {
         </TouchableOpacity>
 
         {/* Share Button */}
-        {mediaUrl && stayTimer >= STAY_DURATION && (
+        {mediaUrl && (sessionState === 'completed' || stayTimer >= STAY_DURATION) && (
           <TouchableOpacity
             style={styles.shareButton}
             onPress={handleShare}
@@ -645,6 +667,24 @@ export default function Challenge() {
           </TouchableOpacity>
         )}
       </View>
+
+      {/* Hidden Watermark Capture View */}
+      {mediaUrl && (
+        <View style={styles.hiddenWatermarkContainer} pointerEvents="none">
+          <View ref={watermarkRef} style={styles.watermarkCapture}>
+            <Image source={{ uri: mediaUrl }} style={styles.watermarkImage} />
+            <Image 
+              source={require('../../assets/Grounded_logo_removed_background.png')} 
+              style={styles.watermarkLogo} 
+              resizeMode="contain"
+            />
+            <View style={styles.watermarkTextOverlay}>
+              <Text style={styles.watermarkTag}>#GROUNDED</Text>
+              <Text style={styles.watermarkChallenge}>{challenge?.location}</Text>
+            </View>
+          </View>
+        </View>
+      )}
     </View>
   );
 }
@@ -1097,5 +1137,56 @@ const styles = StyleSheet.create({
     color: COLORS.textPrimary,
     fontSize: FONT.md,
     fontWeight: FONT.bold,
+  },
+
+  // Watermark hidden view styles
+  hiddenWatermarkContainer: {
+    position: 'absolute',
+    left: -2000, // Hide off-screen
+    top: 0,
+    width: width,
+    zIndex: -1,
+  },
+  watermarkCapture: {
+    width: width,
+    height: width * 1.33, // 4:3 Aspect Ratio
+    backgroundColor: 'black',
+    position: 'relative',
+  },
+  watermarkImage: {
+    width: '100%',
+    height: '100%',
+  },
+  watermarkLogo: {
+    position: 'absolute',
+    bottom: 20,
+    left: 20,
+    width: 100,
+    height: 40,
+    opacity: 0.9,
+  },
+  watermarkTextOverlay: {
+    position: 'absolute',
+    bottom: 20,
+    right: 20,
+    alignItems: 'flex-end',
+  },
+  watermarkTag: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: '900',
+    letterSpacing: 2,
+    textShadowColor: 'rgba(0, 0, 0, 0.75)',
+    textShadowOffset: { width: -1, height: 1 },
+    textShadowRadius: 10,
+  },
+  watermarkChallenge: {
+    color: 'white',
+    fontSize: 10,
+    fontWeight: 'bold',
+    textShadowColor: 'rgba(0, 0, 0, 0.75)',
+    textShadowOffset: { width: -1, height: 1 },
+    textShadowRadius: 10,
+    marginTop: 2,
   },
 });

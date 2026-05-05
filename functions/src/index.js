@@ -114,3 +114,50 @@ exports.markMissedUsers = onSchedule(
     console.log(`Miss detection completed. ${missedCount} users missed.`);
   }
 );
+
+// ─── Scheduled Job: Cleanup (Every 12 hours) ────
+exports.cleanupOldSubmissions = onSchedule(
+  {
+    schedule: "0 */12 * * *", // Run every 12 hours
+    timeZone: "Asia/Kolkata",
+  },
+  async () => {
+    const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000;
+    const subSnap = await db.collection("submissions")
+      .where("timestamp", "<", oneDayAgo)
+      .get();
+
+    console.log(`Starting cleanup for ${subSnap.size} old submissions...`);
+
+    const storage = admin.storage().bucket();
+    let deleteCount = 0;
+
+    for (const doc of subSnap.docs) {
+      const data = doc.data();
+
+      try {
+        // 1. Delete image from Storage if it exists
+        if (data.mediaUrl) {
+          // Extract filename from URL (Firebase Storage format)
+          // Example: https://firebasestorage.googleapis.com/v0/b/[bucket]/o/submissions%2F[filename]?alt=media
+          const urlParts = data.mediaUrl.split('/o/');
+          if (urlParts.length > 1) {
+            const filePathWithParams = urlParts[1].split('?')[0];
+            const filePath = decodeURIComponent(filePathWithParams);
+            
+            console.log(`Deleting storage file: ${filePath}`);
+            await storage.file(filePath).delete().catch(e => console.log("File already deleted or not found"));
+          }
+        }
+
+        // 2. Delete Firestore document
+        await doc.ref.delete();
+        deleteCount++;
+      } catch (error) {
+        console.error(`Error deleting submission ${doc.id}:`, error);
+      }
+    }
+
+    console.log(`Cleanup completed. ${deleteCount} submissions deleted.`);
+  }
+);

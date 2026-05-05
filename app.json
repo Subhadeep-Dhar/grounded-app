@@ -4,12 +4,12 @@
     "slug": "Grounded",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/logo.png",
+    "icon": "./assets/Grounded_logo_dark.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "scheme": "grounded",
     "splash": {
-      "image": "./assets/logo.png",
+      "image": "./assets/Grounded_logo_dark.png",
       "resizeMode": "contain",
       "backgroundColor": "#10B981"
     },
@@ -24,7 +24,7 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/logo.png",
+        "foregroundImage": "./assets/Grounded_logo_dark.png",
         "backgroundColor": "#10B981"
       },
       "edgeToEdgeEnabled": true,
@@ -47,7 +47,7 @@
       }
     },
     "web": {
-      "favicon": "./assets/logo.png",
+      "favicon": "./assets/Grounded_logo_dark.png",
       "bundler": "metro"
     },
     "plugins": [
@@ -75,7 +75,7 @@
       [
         "expo-notifications",
         {
-          "icon": "./assets/notification-icon.png",
+          "icon": "./assets/Grounded_logo_dark.png",
           "color": "#10B981",
           "sounds": []
         }

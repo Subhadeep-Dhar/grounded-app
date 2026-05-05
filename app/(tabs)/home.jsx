@@ -88,7 +88,7 @@ export default function Home() {
       <View style={styles.header}>
         <View style={styles.headerLeft}>
           <Image 
-            source={require('../../assets/logo.png')} 
+            source={require('../../assets/Grounded_logo_dark.png')} 
             style={styles.headerLogo} 
             resizeMode="contain"
           />
