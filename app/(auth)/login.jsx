@@ -16,8 +16,7 @@ import { useRouter } from 'expo-router';
 import { login } from '../../src/services/auth';
 import { validateEmail, validatePassword } from '../../src/utils/validators';
 import { COLORS, FONT, SPACING, RADIUS, SHADOW } from '../../src/constants/theme';
-import Eye from 'lucide-react-native/dist/cjs/icons/eye';
-import EyeOff from 'lucide-react-native/dist/cjs/icons/eye-off';
+import { Eye, EyeOff } from 'lucide-react-native';
 
 export default function Login() {
   const router = useRouter();

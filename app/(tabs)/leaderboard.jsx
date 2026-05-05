@@ -36,9 +36,9 @@ import {
   Crown,
   Medal,
   ChevronRight,
-  Eye, EyeOff
+  Eye, EyeOff,
+  ArrowUp
 } from 'lucide-react-native';
-import ArrowUp from 'lucide-react-native/dist/cjs/icons/arrow-up';
 import { collection, query, orderBy, limit, getDocs } from 'firebase/firestore';
 import { db } from '../../src/services/db';
 import { COLORS, FONT, SPACING, RADIUS, SHADOW } from '../../src/constants/theme';

@@ -12,17 +12,19 @@ import {
   Modal,
   Dimensions,
 } from 'react-native';
-import Clock from 'lucide-react-native/dist/cjs/icons/clock';
-import MapPin from 'lucide-react-native/dist/cjs/icons/map-pin';
-import CircleCheck from 'lucide-react-native/dist/cjs/icons/circle-check';
-import X from 'lucide-react-native/dist/cjs/icons/x';
-import Maximize2 from 'lucide-react-native/dist/cjs/icons/maximize-2';
-import Calendar from 'lucide-react-native/dist/cjs/icons/calendar';
-import Zap from 'lucide-react-native/dist/cjs/icons/zap';
-import User from 'lucide-react-native/dist/cjs/icons/user';
-import ShieldCheck from 'lucide-react-native/dist/cjs/icons/shield-check';
-import TriangleAlert from 'lucide-react-native/dist/cjs/icons/triangle-alert';
-import CircleX from 'lucide-react-native/dist/cjs/icons/circle-x';
+import {
+  Clock,
+  MapPin,
+  CircleCheck,
+  X,
+  Maximize2,
+  Calendar,
+  Zap,
+  User,
+  ShieldCheck,
+  TriangleAlert,
+  CircleX
+} from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { getFeed } from '../../src/services/feed';
 import { COLORS, FONT, SPACING, RADIUS, SHADOW } from '../../src/constants/theme';

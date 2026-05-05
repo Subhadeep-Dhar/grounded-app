@@ -2,6 +2,10 @@ const { getDefaultConfig } = require('expo/metro-config');
 
 const config = getDefaultConfig(__dirname);
 
+// Prioritize CommonJS (main) over ESM (module/react-native) 
+// to avoid .mjs resolution issues with barrel imports.
+config.resolver.resolverMainFields = ['main', 'browser', 'module'];
+
 config.resolver.sourceExts = [...config.resolver.sourceExts, 'mjs', 'cjs'];
 
 // 🔥 BLOCK react-native-maps on web
