@@ -89,7 +89,7 @@ export default function Challenge() {
   const [submissionResult, setSubmissionResult] = useState(null);
   const [locationError, setLocationError] = useState(null);
   const [distance, setDistance] = useState(null);
-  const [imageSize, setImageSize] = useState({ width: 0, height: 0 });
+  const [photoRatio, setPhotoRatio] = useState(1);
 
   const watchSub = useRef(null);
   const stayInterval = useRef(null);
@@ -301,7 +301,10 @@ export default function Challenge() {
       if (uri) {
         setMediaUrl(uri);
         Image.getSize(uri, (w, h) => {
-          setImageSize({ width: w, height: h });
+          setPhotoRatio(w / h);
+        }, (err) => {
+          console.warn('Failed to get capture image size', err);
+          setPhotoRatio(1);
         });
       }
     } catch (error) {
@@ -669,7 +672,10 @@ export default function Challenge() {
               activeOpacity={0.8}
             >
               <View style={styles.photoPreviewContent}>
-                <Image source={{ uri: mediaUrl }} style={styles.photoThumbnail} />
+                <Image 
+                  source={{ uri: mediaUrl }} 
+                  style={[styles.photoThumbnail, { aspectRatio: photoRatio }]} 
+                />
                 <View style={styles.photoInfo}>
                   <CircleCheck size={16} color={COLORS.success} />
                   <Text style={styles.photoText}>Photo captured</Text>

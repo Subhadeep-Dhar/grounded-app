@@ -49,6 +49,7 @@ export default function PublicProfile() {
   const router = useRouter();
   const [userData, setUserData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [profilePicRatio, setProfilePicRatio] = useState(1);
 
   const fetchUserData = useCallback(async () => {
     if (!id) return;
@@ -65,6 +66,17 @@ export default function PublicProfile() {
   useEffect(() => {
     fetchUserData();
   }, [fetchUserData]);
+
+  useEffect(() => {
+    if (userData?.profilePic) {
+      Image.getSize(userData.profilePic, (width, height) => {
+        setProfilePicRatio(width / height);
+      }, (error) => {
+        console.warn('Failed to get profile pic size', error);
+        setProfilePicRatio(1);
+      });
+    }
+  }, [userData?.profilePic]);
 
   const earnedBadges = BADGES.map(badge => ({
     ...badge,
@@ -109,7 +121,11 @@ export default function PublicProfile() {
           <View style={styles.avatarContainer}>
             <View style={styles.avatar}>
               {userData?.profilePic ? (
-                <Image source={{ uri: userData.profilePic }} style={styles.profileImage} />
+                <Image 
+                  source={{ uri: userData.profilePic }} 
+                  style={[styles.profileImage, { aspectRatio: profilePicRatio }]} 
+                  resizeMode="cover"
+                />
               ) : (
                 <Text style={styles.avatarText}>
                   {userData?.username?.charAt(0).toUpperCase() || '?'}

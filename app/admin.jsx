@@ -17,6 +17,29 @@ import { COLORS, FONT, SPACING, RADIUS, SHADOW } from '../src/constants/theme';
 import { useAuthStore } from '../src/store/authStore';
 import { Redirect } from 'expo-router';
 
+const AdminImage = ({ uri }) => {
+  const [aspectRatio, setAspectRatio] = useState(1);
+
+  useEffect(() => {
+    if (uri) {
+      Image.getSize(uri, (w, h) => {
+        setAspectRatio(w / h);
+      }, (err) => {
+        console.warn('Failed to get admin image size', err);
+        setAspectRatio(1);
+      });
+    }
+  }, [uri]);
+
+  return (
+    <Image 
+      source={{ uri }} 
+      style={[styles.image, { aspectRatio: Math.min(Math.max(aspectRatio, 0.75), 1.75) }]} 
+      resizeMode="cover" 
+    />
+  );
+};
+
 export default function Admin() {
   const { user, loading: authLoading } = useAuthStore();
   const [submissions, setSubmissions] = useState([]);
@@ -94,7 +117,7 @@ export default function Admin() {
         </View>
       </View>
       {item.mediaUrl && (
-        <Image source={{ uri: item.mediaUrl }} style={styles.image} resizeMode="cover" />
+        <AdminImage uri={item.mediaUrl} />
       )}
       <View style={styles.scoreRow}>
         <View style={styles.scoreItem}>

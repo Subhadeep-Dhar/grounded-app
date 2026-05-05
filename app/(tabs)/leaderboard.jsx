@@ -7,6 +7,8 @@ import {
   ActivityIndicator,
   RefreshControl,
   Platform,
+  Image,
+  TouchableOpacity,
 } from 'react-native';
 import {
   Flame,
@@ -42,7 +44,7 @@ import {
 import { collection, query, orderBy, limit, getDocs } from 'firebase/firestore';
 import { db } from '../../src/services/db';
 import { COLORS, FONT, SPACING, RADIUS, SHADOW } from '../../src/constants/theme';
-import { Image, TouchableOpacity } from 'react-native';
+
 import { useRouter } from 'expo-router';
 
 export default function Leaderboard() {

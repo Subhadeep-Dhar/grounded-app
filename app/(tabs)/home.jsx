@@ -57,6 +57,7 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [quote, setQuote] = useState(getRandomQuote());
+  const [profilePicRatio, setProfilePicRatio] = useState(1);
 
   const fetchData = useCallback(async () => {
     if (!user) return;
@@ -80,6 +81,17 @@ export default function Home() {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  useEffect(() => {
+    if (userData?.profilePic) {
+      Image.getSize(userData.profilePic, (width, height) => {
+        setProfilePicRatio(width / height);
+      }, (error) => {
+        console.warn('Failed to get home profile pic size', error);
+        setProfilePicRatio(1);
+      });
+    }
+  }, [userData?.profilePic]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
@@ -132,7 +144,11 @@ export default function Home() {
           activeOpacity={0.7}
         >
           {userData?.profilePic ? (
-            <Image source={{ uri: userData.profilePic }} style={styles.profileImage} />
+            <Image 
+              source={{ uri: userData.profilePic }} 
+              style={[styles.profileImage, { aspectRatio: profilePicRatio }]} 
+              resizeMode="cover"
+            />
           ) : (
             <User size={24} color={COLORS.accent} />
           )}

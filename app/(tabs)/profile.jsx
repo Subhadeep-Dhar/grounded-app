@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   Alert,
   Platform,
+  Image,
 } from 'react-native';
 import {
   Flame,
@@ -179,6 +180,19 @@ export default function Profile() {
   }));
   const earnedCount = earnedBadges.filter(b => b.earned).length;
 
+  const [profilePicRatio, setProfilePicRatio] = useState(1);
+
+  useEffect(() => {
+    if (userData?.profilePic) {
+      Image.getSize(userData.profilePic, (width, height) => {
+        setProfilePicRatio(width / height);
+      }, (error) => {
+        console.warn('Failed to get profile pic size', error);
+        setProfilePicRatio(1);
+      });
+    }
+  }, [userData?.profilePic]);
+
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
@@ -196,7 +210,11 @@ export default function Profile() {
           <TouchableOpacity onPress={pickProfilePic} activeOpacity={0.8} disabled={updating}>
             <View style={styles.avatar}>
               {userData?.profilePic ? (
-                <Image source={{ uri: userData.profilePic }} style={styles.profileImage} />
+                <Image 
+                  source={{ uri: userData.profilePic }} 
+                  style={[styles.profileImage, { aspectRatio: profilePicRatio }]} 
+                  resizeMode="cover"
+                />
               ) : (
                 <Text style={styles.avatarText}>
                   {userData?.username?.charAt(0).toUpperCase() || '?'}

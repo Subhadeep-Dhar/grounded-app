@@ -31,6 +31,38 @@ import { COLORS, FONT, SPACING, RADIUS, SHADOW } from '../../src/constants/theme
 
 const { width, height } = Dimensions.get('window');
 
+const DynamicImage = ({ uri, onPress }) => {
+  const [aspectRatio, setAspectRatio] = useState(1);
+
+  useEffect(() => {
+    if (uri) {
+      Image.getSize(uri, (w, h) => {
+        setAspectRatio(w / h);
+      }, (err) => {
+        console.warn('Failed to get image size', err);
+        setAspectRatio(1);
+      });
+    }
+  }, [uri]);
+
+  return (
+    <TouchableOpacity 
+      activeOpacity={0.9} 
+      onPress={onPress}
+      style={[styles.imageContainer, { aspectRatio: Math.min(Math.max(aspectRatio, 0.75), 1.75) }]}
+    >
+      <Image
+        source={{ uri }}
+        style={styles.image}
+        resizeMode="cover"
+      />
+      <View style={styles.expandBadge}>
+        <Maximize2 size={16} color="white" />
+      </View>
+    </TouchableOpacity>
+  );
+};
+
 export default function Feed() {
   const router = useRouter();
   const [submissions, setSubmissions] = useState([]);
@@ -135,20 +167,10 @@ export default function Feed() {
         </View>
 
         {item.mediaUrl && (
-          <TouchableOpacity 
-            activeOpacity={0.9} 
-            onPress={() => setSelectedImage(item.mediaUrl)}
-            style={[styles.imageContainer, { aspectRatio }]}
-          >
-            <Image
-              source={{ uri: item.mediaUrl }}
-              style={styles.image}
-              resizeMode="contain"
-            />
-            <View style={styles.expandBadge}>
-              <Maximize2 size={16} color="white" />
-            </View>
-          </TouchableOpacity>
+          <DynamicImage 
+            uri={item.mediaUrl} 
+            onPress={() => setSelectedImage(item.mediaUrl)} 
+          />
         )}
 
         <View style={styles.cardFooter}>
