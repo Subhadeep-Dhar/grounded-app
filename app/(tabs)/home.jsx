@@ -36,7 +36,8 @@ import {
   ArrowRight,
   ThumbsUp,
   Crown,
-  Medal
+  Medal,
+  Eye, EyeOff
 } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { useAuthStore } from '../../src/store/authStore';

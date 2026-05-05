@@ -39,7 +39,8 @@ import {
   Pencil,
   LogOut,
   CircleAlert,
-  Info
+  Info,
+  Eye, EyeOff
 } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';

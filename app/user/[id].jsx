@@ -37,7 +37,8 @@ import {
   ArrowRight,
   ThumbsUp,
   Crown,
-  Medal
+  Medal,
+  Eye, EyeOff
 } from 'lucide-react-native';
 import { db } from '../../src/lib/firebase';
 import { BADGES } from '../../src/constants/config';

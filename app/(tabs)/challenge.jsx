@@ -49,7 +49,8 @@ import {
   ThumbsUp,
   Crown,
   Medal,
-  ChevronRight
+  ChevronRight,
+  Eye, EyeOff
 } from 'lucide-react-native';
 import { COLORS, FONT, SPACING, RADIUS, SHADOW, STAY_DURATION } from '../../src/constants/theme';
 import { getUserDoc } from '../../src/services/db';
