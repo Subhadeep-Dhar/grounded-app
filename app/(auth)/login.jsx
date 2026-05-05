@@ -66,7 +66,7 @@ export default function Login() {
         {/* Logo */}
         <View style={styles.logoContainer}>
           <Image 
-            source={require('../../assets/logo.png')} 
+            source={require('../../assets/Grounded_logo_dark.png')} 
             style={styles.logoImage} 
             resizeMode="contain"
           />

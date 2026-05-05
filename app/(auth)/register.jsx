@@ -68,7 +68,7 @@ export default function Register() {
         {/* Header */}
         <View style={styles.logoContainer}>
           <Image 
-            source={require('../../assets/logo.png')} 
+            source={require('../../assets/Grounded_logo_dark.png')} 
             style={styles.logoImage} 
             resizeMode="contain"
           />
