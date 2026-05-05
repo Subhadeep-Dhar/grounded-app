@@ -10,6 +10,34 @@ import {
   Platform,
   Image,
 } from 'react-native';
+import {
+  Flame,
+  Trophy,
+  Star,
+  MapPin,
+  Clock,
+  Camera,
+  CircleCheck,
+  ArrowLeft,
+  ShieldCheck,
+  Zap,
+  TriangleAlert,
+  Share2,
+  Navigation,
+  Target,
+  Timer,
+  Maximize2,
+  CircleX,
+  History,
+  User,
+  Calendar,
+  Award,
+  CheckCircle2,
+  ArrowRight,
+  ThumbsUp,
+  Crown,
+  Medal
+} from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { useAuthStore } from '../../src/store/authStore';
 import { getUserDoc } from '../../src/services/db';
@@ -87,9 +115,9 @@ export default function Home() {
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerLeft}>
-          <Image 
-            source={require('../../assets/Grounded_logo_dark.png')} 
-            style={styles.headerLogo} 
+          <Image
+            source={require('../../assets/Grounded_logo_dark.png')}
+            style={styles.headerLogo}
             resizeMode="contain"
           />
           <View>
@@ -100,10 +128,13 @@ export default function Home() {
         <TouchableOpacity
           style={styles.profileButton}
           onPress={() => router.push('/(tabs)/profile')}
+          activeOpacity={0.7}
         >
-          <Text style={styles.profileText}>
-            {user?.email?.charAt(0).toUpperCase() || '?'}
-          </Text>
+          {userData?.profilePic ? (
+            <Image source={{ uri: userData.profilePic }} style={styles.profileImage} />
+          ) : (
+            <User size={24} color={COLORS.accent} />
+          )}
         </TouchableOpacity>
       </View>
 
@@ -123,8 +154,13 @@ export default function Home() {
               styles.statusText,
               (challenge?.status === 'completed' || alreadySubmitted) && styles.statusTextCompleted
             ]}>
-              {(challenge?.status === 'completed' || alreadySubmitted) ? '✓ Done' : '→ Start'}
+              {(challenge?.status === 'completed' || alreadySubmitted) ? 'Done' : 'Start'}
             </Text>
+            {(challenge?.status === 'completed' || alreadySubmitted) ? (
+              <CircleCheck size={12} color={COLORS.accent} style={{ marginLeft: 4 }} />
+            ) : (
+              <ArrowRight size={12} color={COLORS.warning} style={{ marginLeft: 4 }} />
+            )}
           </View>
         </View>
 
@@ -133,7 +169,7 @@ export default function Home() {
         </Text>
 
         <View style={styles.challengeLocation}>
-          <Text style={styles.locationIcon}>📍</Text>
+          <MapPin size={14} color={COLORS.textSecondary} style={{ marginRight: 4 }} />
           <Text style={styles.locationText}>
             {challenge?.location || 'Loading...'}
           </Text>
@@ -141,31 +177,32 @@ export default function Home() {
 
         {alreadySubmitted ? (
           <View style={[styles.startButton, { backgroundColor: 'transparent', borderWidth: 1, borderColor: COLORS.accent, shadowOpacity: 0 }]}>
-            <Text style={[styles.startButtonText, { color: COLORS.accent }]}>✅ You showed up today</Text>
+            <CircleCheck size={18} color={COLORS.accent} style={{ marginRight: 8 }} />
+            <Text style={[styles.startButtonText, { color: COLORS.accent }]}>You showed up today</Text>
           </View>
         ) : challenge?.status !== 'completed' && (
           <View style={styles.startButton}>
-            <Text style={styles.startButtonText}>Start Session →</Text>
+            <Text style={styles.startButtonText}>Start Session</Text>
+            <ArrowRight size={18} color={COLORS.textPrimary} style={{ marginLeft: 8 }} />
           </View>
         )}
       </TouchableOpacity>
 
-      {/* Stats Grid */}
       <View style={styles.statsGrid}>
         <View style={[styles.statCard, styles.statCardStreak]}>
-          <Text style={styles.statEmoji}>🔥</Text>
+          <Flame size={24} color="#FF4500" style={{ marginBottom: 8 }} />
           <Text style={styles.statValue}>{userData?.streakCount || 0}</Text>
           <Text style={styles.statLabel}>Day Streak</Text>
         </View>
 
         <View style={styles.statCard}>
-          <Text style={styles.statEmoji}>⭐</Text>
+          <Star size={24} color="#FFD700" style={{ marginBottom: 8 }} />
           <Text style={styles.statValue}>{userData?.trustScore || 50}</Text>
           <Text style={styles.statLabel}>Trust Score</Text>
         </View>
 
         <View style={styles.statCard}>
-          <Text style={styles.statEmoji}>🏆</Text>
+          <Trophy size={24} color="#FFA500" style={{ marginBottom: 8 }} />
           <Text style={styles.statValue}>{userData?.totalCompletions || 0}</Text>
           <Text style={styles.statLabel}>Completed</Text>
         </View>
@@ -187,8 +224,8 @@ export default function Home() {
         </View>
         <Text style={styles.trustHint}>
           {(userData?.trustScore || 50) >= 80 ? 'Excellent standing!' :
-           (userData?.trustScore || 50) >= 60 ? 'Good progress — keep showing up.' :
-           'Show up daily to build trust.'}
+            (userData?.trustScore || 50) >= 60 ? 'Good progress — keep showing up.' :
+              'Show up daily to build trust.'}
         </Text>
 
         {/* Breakdown */}
@@ -196,14 +233,14 @@ export default function Home() {
           <Text style={styles.breakdownTitle}>How it works:</Text>
           <View style={styles.breakdownRow}>
             <View style={styles.breakdownItem}>
-              <Text style={styles.breakdownEmoji}>🚀</Text>
+              <Zap size={14} color={COLORS.accent} />
               <View>
                 <Text style={styles.breakdownLabel}>Score ≥ 70</Text>
                 <Text style={styles.breakdownValue}>+score × 0.1</Text>
               </View>
             </View>
             <View style={styles.breakdownItem}>
-              <Text style={styles.breakdownEmoji}>👍</Text>
+              <ThumbsUp size={14} color={COLORS.accent} />
               <View>
                 <Text style={styles.breakdownLabel}>Score 40-69</Text>
                 <Text style={styles.breakdownValue}>+score × 0.05</Text>
@@ -212,14 +249,14 @@ export default function Home() {
           </View>
           <View style={styles.breakdownRow}>
             <View style={styles.breakdownItem}>
-              <Text style={styles.breakdownEmoji}>⚠️</Text>
+              <TriangleAlert size={14} color={COLORS.error} />
               <View>
                 <Text style={styles.breakdownLabel}>Score &lt; 40</Text>
                 <Text style={styles.breakdownValue}>-5 Points</Text>
               </View>
             </View>
             <View style={styles.breakdownItem}>
-              <Text style={styles.breakdownEmoji}>🔥</Text>
+              <Flame size={14} color={COLORS.accent} />
               <View>
                 <Text style={styles.breakdownLabel}>Streak ≥ 3</Text>
                 <Text style={styles.breakdownValue}>+2 Bonus</Text>
@@ -237,7 +274,7 @@ export default function Home() {
             const earned = badge.check(userData || {});
             return (
               <View key={badge.id} style={[styles.badge, !earned && styles.badgeLocked]}>
-                <Text style={styles.badgeEmoji}>{badge.emoji}</Text>
+                <Award size={28} color={earned ? COLORS.accent : COLORS.textMuted} style={{ marginBottom: 8 }} />
                 <Text style={[styles.badgeName, !earned && styles.badgeNameLocked]}>
                   {badge.name}
                 </Text>
@@ -336,6 +373,11 @@ const styles = StyleSheet.create({
     fontSize: FONT.lg,
     fontWeight: FONT.bold,
     color: COLORS.accent,
+  },
+  profileImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 22,
   },
 
   // Challenge Card

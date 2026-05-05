@@ -16,6 +16,8 @@ import { useRouter } from 'expo-router';
 import { register } from '../../src/services/auth';
 import { validateEmail, validatePassword } from '../../src/utils/validators';
 import { COLORS, FONT, SPACING, RADIUS, SHADOW } from '../../src/constants/theme';
+import Eye from 'lucide-react-native/dist/cjs/icons/eye';
+import EyeOff from 'lucide-react-native/dist/cjs/icons/eye-off';
 
 export default function Register() {
   const router = useRouter();
@@ -107,7 +109,11 @@ export default function Register() {
                 style={styles.eyeButton}
                 onPress={() => setShowPassword(!showPassword)}
               >
-                <Text style={styles.eyeText}>{showPassword ? '👁️' : '👁️‍🗨️'}</Text>
+                {showPassword ? (
+                  <EyeOff size={20} color={COLORS.textMuted} />
+                ) : (
+                  <Eye size={20} color={COLORS.textMuted} />
+                )}
               </TouchableOpacity>
             </View>
             {errors.password && <Text style={styles.errorText}>{errors.password}</Text>}

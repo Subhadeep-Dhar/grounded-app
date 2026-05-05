@@ -8,14 +8,33 @@ import {
   RefreshControl,
   ActivityIndicator,
   Platform,
+  TouchableOpacity,
+  Modal,
+  Dimensions,
 } from 'react-native';
+import Clock from 'lucide-react-native/dist/cjs/icons/clock';
+import MapPin from 'lucide-react-native/dist/cjs/icons/map-pin';
+import CircleCheck from 'lucide-react-native/dist/cjs/icons/circle-check';
+import X from 'lucide-react-native/dist/cjs/icons/x';
+import Maximize2 from 'lucide-react-native/dist/cjs/icons/maximize-2';
+import Calendar from 'lucide-react-native/dist/cjs/icons/calendar';
+import Zap from 'lucide-react-native/dist/cjs/icons/zap';
+import User from 'lucide-react-native/dist/cjs/icons/user';
+import ShieldCheck from 'lucide-react-native/dist/cjs/icons/shield-check';
+import TriangleAlert from 'lucide-react-native/dist/cjs/icons/triangle-alert';
+import CircleX from 'lucide-react-native/dist/cjs/icons/circle-x';
+import { useRouter } from 'expo-router';
 import { getFeed } from '../../src/services/feed';
 import { COLORS, FONT, SPACING, RADIUS, SHADOW } from '../../src/constants/theme';
 
+const { width, height } = Dimensions.get('window');
+
 export default function Feed() {
+  const router = useRouter();
   const [submissions, setSubmissions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [selectedImage, setSelectedImage] = useState(null);
 
   const fetchFeed = useCallback(async () => {
     try {
@@ -47,12 +66,12 @@ export default function Feed() {
     }
   };
 
-  const getStatusEmoji = (status) => {
+  const getStatusIcon = (status) => {
     switch (status) {
-      case 'approved': return '✅';
-      case 'flagged': return '⚠️';
-      case 'rejected': return '❌';
-      default: return '⏳';
+      case 'approved': return <CircleCheck size={12} color={COLORS.success} />;
+      case 'flagged': return <TriangleAlert size={12} color={COLORS.warning} />;
+      case 'rejected': return <CircleX size={12} color={COLORS.error} />;
+      default: return <Clock size={12} color={COLORS.textMuted} />;
     }
   };
 
@@ -72,61 +91,98 @@ export default function Feed() {
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   };
 
-  const renderItem = ({ item }) => (
-    <View style={styles.card}>
-      <View style={styles.cardHeader}>
-        <View style={styles.userInfo}>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>
-              {item.userId ? item.userId.charAt(0).toUpperCase() : '?'}
+  const renderItem = ({ item }) => {
+    // Basic heuristic for aspect ratio if not provided by server
+    const isPortrait = true; // Most phone captures are portrait
+    const aspectRatio = isPortrait ? 9 / 16 : 16 / 9;
+
+    return (
+      <View style={styles.card}>
+        <View style={styles.cardHeader}>
+          <TouchableOpacity 
+            style={styles.userInfo}
+            onPress={() => router.push(`/user/${item.userId}`)}
+            activeOpacity={0.7}
+          >
+            <View style={styles.avatar}>
+              {item.user?.profilePic ? (
+                <Image source={{ uri: item.user.profilePic }} style={styles.avatarImage} />
+              ) : (
+                <User size={18} color={COLORS.accent} />
+              )}
+            </View>
+            <View>
+              <Text style={styles.username}>
+                {item.user?.username || 'Grounded User'}
+              </Text>
+              <View style={styles.timestampRow}>
+                <Clock size={10} color={COLORS.textMuted} style={{ marginRight: 4 }} />
+                <Text style={styles.timestamp}>{formatDate(item.timestamp)}</Text>
+              </View>
+            </View>
+          </TouchableOpacity>
+          <View style={[
+            styles.statusBadge,
+            { backgroundColor: getStatusColor(item.status) + '20' }
+          ]}>
+            {getStatusIcon(item.status)}
+            <Text style={[styles.statusText, { color: getStatusColor(item.status), marginLeft: 4 }]}>
+              {item.status || 'pending'}
             </Text>
           </View>
-          <View>
-            <Text style={styles.userId}>
-              {item.userId ? item.userId.substring(0, 8) + '...' : 'Anonymous'}
-            </Text>
-            <Text style={styles.timestamp}>{formatDate(item.timestamp)}</Text>
+        </View>
+
+        {item.mediaUrl && (
+          <TouchableOpacity 
+            activeOpacity={0.9} 
+            onPress={() => setSelectedImage(item.mediaUrl)}
+            style={[styles.imageContainer, { aspectRatio }]}
+          >
+            <Image
+              source={{ uri: item.mediaUrl }}
+              style={styles.image}
+              resizeMode="contain"
+            />
+            <View style={styles.expandBadge}>
+              <Maximize2 size={16} color="white" />
+            </View>
+          </TouchableOpacity>
+        )}
+
+        <View style={styles.cardFooter}>
+          <View style={styles.scoreContainer}>
+            <Text style={styles.scoreLabel}>Score</Text>
+            <View style={styles.scoreRow}>
+              <Zap size={14} color={COLORS.accent} style={{ marginRight: 4 }} />
+              <Text style={styles.scoreValue}>{item.score || 0}</Text>
+            </View>
+          </View>
+          <View style={styles.detailContainer}>
+            <Text style={styles.detailLabel}>Verification</Text>
+            <View style={styles.detailValueRow}>
+              {item.locationOk !== false ? (
+                <CircleCheck size={12} color={COLORS.success} />
+              ) : (
+                <CircleX size={12} color={COLORS.error} />
+              )}
+              <Text style={[styles.detailValue, { marginLeft: 4 }]}>
+                Location
+              </Text>
+            </View>
+          </View>
+          <View style={styles.detailContainer}>
+            <Text style={styles.detailLabel}>Timing</Text>
+            <View style={styles.detailValueRow}>
+              <Clock size={12} color={item.didInTime ? COLORS.success : COLORS.warning} />
+              <Text style={[styles.detailValue, { marginLeft: 4 }]}>
+                {item.didInTime ? 'On Time' : 'Late'}
+              </Text>
+            </View>
           </View>
         </View>
-        <View style={[
-          styles.statusBadge,
-          { backgroundColor: getStatusColor(item.status) + '20' }
-        ]}>
-          <Text style={styles.statusEmoji}>{getStatusEmoji(item.status)}</Text>
-          <Text style={[styles.statusText, { color: getStatusColor(item.status) }]}>
-            {item.status || 'pending'}
-          </Text>
-        </View>
       </View>
-
-      {item.mediaUrl && (
-        <Image
-          source={{ uri: item.mediaUrl }}
-          style={styles.image}
-          resizeMode="contain"
-        />
-      )}
-
-      <View style={styles.cardFooter}>
-        <View style={styles.scoreContainer}>
-          <Text style={styles.scoreLabel}>Score</Text>
-          <Text style={styles.scoreValue}>{item.score || 0}</Text>
-        </View>
-        <View style={styles.detailContainer}>
-          <Text style={styles.detailLabel}>Time</Text>
-          <Text style={styles.detailValue}>
-            {item.didInTime ? '✅ On time' : '⏰ Late'}
-          </Text>
-        </View>
-        <View style={styles.detailContainer}>
-          <Text style={styles.detailLabel}>Location</Text>
-          <Text style={styles.detailValue}>
-            {item.locationOk !== false ? '✅ Verified' : '❌ Failed'}
-          </Text>
-        </View>
-      </View>
-    </View>
-  );
+    );
+  };
 
   const renderEmpty = () => (
     <View style={styles.emptyContainer}>
@@ -172,6 +228,29 @@ export default function Feed() {
         ListEmptyComponent={renderEmpty}
         showsVerticalScrollIndicator={false}
       />
+
+      {/* Image Zoom Modal */}
+      <Modal
+        visible={!!selectedImage}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSelectedImage(null)}
+      >
+        <View style={styles.modalOverlay}>
+          <TouchableOpacity 
+            style={styles.closeButton} 
+            onPress={() => setSelectedImage(null)}
+          >
+            <X size={28} color="white" />
+          </TouchableOpacity>
+          
+          <Image
+            source={{ uri: selectedImage }}
+            style={styles.expandedImage}
+            resizeMode="contain"
+          />
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -243,20 +322,24 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginRight: SPACING.md,
   },
-  avatarText: {
+  avatarImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 18,
+  },
+  username: {
     fontSize: FONT.md,
     fontWeight: FONT.bold,
-    color: COLORS.accent,
-  },
-  userId: {
-    fontSize: FONT.sm,
-    fontWeight: FONT.semibold,
     color: COLORS.textPrimary,
+  },
+  timestampRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 2,
   },
   timestamp: {
     fontSize: FONT.xs,
     color: COLORS.textMuted,
-    marginTop: 1,
   },
   statusBadge: {
     flexDirection: 'row',
@@ -271,31 +354,50 @@ const styles = StyleSheet.create({
   },
   statusText: {
     fontSize: FONT.xs,
-    fontWeight: FONT.semibold,
-    textTransform: 'capitalize',
+    fontWeight: FONT.bold,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  imageContainer: {
+    width: '100%',
+    backgroundColor: 'black',
+    position: 'relative',
   },
   image: {
     width: '100%',
-    height: 200,
-    backgroundColor: COLORS.bgElevated,
+    height: '100%',
   },
-  cardFooter: {
-    flexDirection: 'row',
-    padding: SPACING.lg,
-    borderTopWidth: 1,
-    borderTopColor: COLORS.border,
+  expandBadge: {
+    position: 'absolute',
+    bottom: 12,
+    right: 12,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    padding: 8,
+    borderRadius: RADIUS.round,
   },
   scoreContainer: {
     flex: 1,
   },
+  scoreRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
+  },
   detailContainer: {
     flex: 1,
+    alignItems: 'flex-start',
+  },
+  detailValueRow: {
+    flexDirection: 'row',
     alignItems: 'center',
+    marginTop: 4,
   },
   scoreLabel: {
-    fontSize: FONT.xs,
+    fontSize: 10,
+    fontWeight: FONT.bold,
     color: COLORS.textMuted,
-    marginBottom: 2,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
   },
   scoreValue: {
     fontSize: FONT.xl,
@@ -303,13 +405,15 @@ const styles = StyleSheet.create({
     color: COLORS.textPrimary,
   },
   detailLabel: {
-    fontSize: FONT.xs,
+    fontSize: 10,
+    fontWeight: FONT.bold,
     color: COLORS.textMuted,
-    marginBottom: 2,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
   },
   detailValue: {
-    fontSize: FONT.sm,
-    fontWeight: FONT.semibold,
+    fontSize: FONT.xs,
+    fontWeight: FONT.bold,
     color: COLORS.textPrimary,
   },
   emptyContainer: {
@@ -332,5 +436,24 @@ const styles = StyleSheet.create({
     fontSize: FONT.sm,
     color: COLORS.textSecondary,
     textAlign: 'center',
+  },
+
+  // Modal Styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'black',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  closeButton: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 60 : 40,
+    right: 20,
+    zIndex: 10,
+    padding: 10,
+  },
+  expandedImage: {
+    width: width,
+    height: height * 0.8,
   },
 });

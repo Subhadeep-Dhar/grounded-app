@@ -1,5 +1,5 @@
 import { db } from '../lib/firebase';
-import { collection, getDocs, query, orderBy, limit, where } from 'firebase/firestore';
+import { collection, getDocs, query, orderBy, limit, where, doc, getDoc } from 'firebase/firestore';
 
 export const getFeed = async () => {
   const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000;
@@ -12,6 +12,21 @@ export const getFeed = async () => {
   );
 
   const snap = await getDocs(q);
+  const submissions = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-  return snap.docs.map(doc => doc.data());
+  // Fetch unique user data
+  const userIds = [...new Set(submissions.map(s => s.userId))];
+  const userMap = {};
+
+  await Promise.all(userIds.map(async (uid) => {
+    const userSnap = await getDoc(doc(db, 'users', uid));
+    if (userSnap.exists()) {
+      userMap[uid] = userSnap.data();
+    }
+  }));
+
+  return submissions.map(sub => ({
+    ...sub,
+    user: userMap[sub.userId] || { username: 'Grounded User' }
+  }));
 };

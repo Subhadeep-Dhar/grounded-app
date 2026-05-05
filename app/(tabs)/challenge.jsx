@@ -22,6 +22,35 @@ import { captureImage } from '../../src/services/camera';
 import { submitChallenge, hasUserSubmittedToday, getTodaySubmission } from '../../src/services/submission';
 import { sendArrivalNotification, sendCompletionNotification } from '../../src/services/notifications';
 import { getDistance } from '../../src/utils/location';
+import {
+  Flame,
+  Trophy,
+  Star,
+  MapPin,
+  Clock,
+  Camera,
+  CircleCheck,
+  ArrowLeft,
+  ShieldCheck,
+  Zap,
+  TriangleAlert,
+  Share2,
+  Navigation,
+  Target,
+  Timer,
+  Maximize2,
+  CircleX,
+  History,
+  User,
+  Calendar,
+  Award,
+  CheckCircle2,
+  ArrowRight,
+  ThumbsUp,
+  Crown,
+  Medal,
+  ChevronRight
+} from 'lucide-react-native';
 import { COLORS, FONT, SPACING, RADIUS, SHADOW, STAY_DURATION } from '../../src/constants/theme';
 import { getUserDoc } from '../../src/services/db';
 import { doc, setDoc } from 'firebase/firestore';
@@ -59,6 +88,7 @@ export default function Challenge() {
   const [submissionResult, setSubmissionResult] = useState(null);
   const [locationError, setLocationError] = useState(null);
   const [distance, setDistance] = useState(null);
+  const [imageSize, setImageSize] = useState({ width: 0, height: 0 });
 
   const watchSub = useRef(null);
   const stayInterval = useRef(null);
@@ -267,7 +297,12 @@ export default function Challenge() {
   const handleCapture = async () => {
     try {
       const uri = await captureImage();
-      if (uri) setMediaUrl(uri);
+      if (uri) {
+        setMediaUrl(uri);
+        Image.getSize(uri, (w, h) => {
+          setImageSize({ width: w, height: h });
+        });
+      }
     } catch (error) {
       Alert.alert('Camera Error', 'Unable to access camera.');
     }
@@ -323,11 +358,22 @@ export default function Challenge() {
         return;
       }
 
-      // submit challenge
+      // 1. Capture watermarked image for the feed/database
+      let finalMediaUri = mediaUrl;
+      try {
+        finalMediaUri = await captureRef(watermarkRef, {
+          format: 'png',
+          quality: 0.8, // Slightly lower for storage efficiency but still good
+        });
+      } catch (e) {
+        console.log("Watermark capture failed, using raw image", e);
+      }
+
+      // 2. submit challenge
       const result = await submitChallenge(
         user.uid,
         { ...challenge, stayTime: stayTimer },
-        mediaUrl,
+        finalMediaUri,
         userLocation
       );
 
@@ -369,13 +415,14 @@ export default function Challenge() {
   // ─── COMPLETED STATE ────────────────────────
   if (sessionState === 'completed') {
     const res = submissionResult || {};
-    const statusLabel = res.score >= 80 ? '🔥 Excellent' : res.score >= 60 ? '👍 Good' : '⚠️ Needs improvement';
+    const statusLabel = res.score >= 80 ? 'Excellent' : res.score >= 60 ? 'Good' : 'Needs improvement';
     const statusColor = res.score >= 80 ? COLORS.success : res.score >= 60 ? COLORS.warning : COLORS.error;
+    const StatusIcon = res.score >= 80 ? ShieldCheck : res.score >= 60 ? CircleCheck : TriangleAlert;
 
     return (
       <View style={styles.container}>
         <ScrollView contentContainerStyle={styles.completedContainer}>
-          <Text style={styles.completedEmoji}>🎉</Text>
+          <StatusIcon size={64} color={statusColor} style={{ marginBottom: SPACING.xl }} />
           <Text style={styles.completedTitle}>Challenge Complete!</Text>
 
           <View style={[styles.statusBadgeLarge, { backgroundColor: statusColor + '20', borderColor: statusColor }]}>
@@ -434,8 +481,9 @@ export default function Challenge() {
       <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent}>
         {/* Header */}
         <View style={styles.screenHeader}>
-          <TouchableOpacity onPress={() => router.back()}>
-            <Text style={styles.backButton}>← Back</Text>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backButtonRow}>
+            <ArrowLeft size={20} color={COLORS.accent} />
+            <Text style={styles.backButtonText}>Back</Text>
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Challenge</Text>
           <View style={{ width: 60 }} />
@@ -446,7 +494,7 @@ export default function Challenge() {
           <Text style={styles.challengeLabel}>TODAY'S TASK</Text>
           <Text style={styles.challengeTask}>{challenge?.task}</Text>
           <View style={styles.locationRow}>
-            <Text style={styles.locationIcon}>📍</Text>
+            <MapPin size={16} color={COLORS.textSecondary} style={{ marginRight: 6 }} />
             <Text style={styles.locationText}>{challenge?.location}</Text>
           </View>
         </View>
@@ -471,7 +519,8 @@ export default function Challenge() {
           disabled={isWeb}
           activeOpacity={0.8}
         >
-          <Text style={styles.startButtonText}>🚀 Start Session</Text>
+          <Navigation size={20} color={COLORS.textPrimary} style={{ marginRight: 8 }} />
+          <Text style={styles.startButtonText}>Start Session</Text>
         </TouchableOpacity>
       </ScrollView>
     );
@@ -488,9 +537,15 @@ export default function Challenge() {
         sessionState === 'staying' && styles.statusStaying,
       ]}>
         <View style={styles.statusContent}>
-          <Text style={styles.statusEmoji}>
-            {sessionState === 'tracking' ? '🧭' : sessionState === 'arrived' ? '🎯' : '⏱️'}
-          </Text>
+          <View style={styles.statusIconContainer}>
+            {sessionState === 'tracking' ? (
+              <Navigation size={24} color="white" />
+            ) : sessionState === 'arrived' ? (
+              <Target size={24} color="white" />
+            ) : (
+              <Timer size={24} color="white" />
+            )}
+          </View>
           <View style={styles.statusTextContainer}>
             <Text style={styles.statusTitle}>
               {sessionState === 'tracking' ? 'Navigating...' :
@@ -561,7 +616,7 @@ export default function Challenge() {
               title={challenge.location}
             >
               <View style={styles.destMarker}>
-                <Text style={styles.destMarkerText}>📍</Text>
+                <MapPin size={24} color={COLORS.error} />
               </View>
             </Marker>
 
@@ -578,19 +633,25 @@ export default function Challenge() {
             />
           </MapView>
         ) : (
-          <View style={styles.mapFallback}>
-            <Text style={styles.mapEmoji}>🗺️</Text>
+            <View style={styles.mapFallback}>
+            <History size={48} color={COLORS.textMuted} style={{ marginBottom: 12, opacity: 0.3 }} />
             <Text style={styles.mapText}>
               {sessionState === 'tracking' ? 'Tracking your location...' :
                 'Session in progress'}
             </Text>
             {userLocation && (
-              <Text style={styles.coordText}>
-                📍 {userLocation.latitude.toFixed(4)}, {userLocation.longitude.toFixed(4)}
-              </Text>
+              <View style={styles.coordRow}>
+                <MapPin size={12} color={COLORS.textMuted} style={{ marginRight: 4 }} />
+                <Text style={styles.coordText}>
+                  {userLocation.latitude.toFixed(4)}, {userLocation.longitude.toFixed(4)}
+                </Text>
+              </View>
             )}
             {distance !== null && (
-              <Text style={styles.distanceText}>{getDistanceText(distance)}</Text>
+              <View style={styles.distRow}>
+                <Navigation size={12} color={COLORS.accent} style={{ marginRight: 4 }} />
+                <Text style={styles.distanceText}>{getDistanceText(distance)}</Text>
+              </View>
             )}
           </View>
         )}
@@ -609,14 +670,17 @@ export default function Challenge() {
               <View style={styles.photoPreviewContent}>
                 <Image source={{ uri: mediaUrl }} style={styles.photoThumbnail} />
                 <View style={styles.photoInfo}>
-                  <Text style={styles.photoEmoji}>✅</Text>
+                  <CircleCheck size={16} color={COLORS.success} />
                   <Text style={styles.photoText}>Photo captured</Text>
                   <Text style={styles.photoHint}>Tap to retake</Text>
                 </View>
               </View>
-              <Text style={styles.photoDeleteNote}>
-                ⏰ This photo will be visible in the feed for 1 day, then automatically deleted.
-              </Text>
+              <View style={styles.deleteNoteRow}>
+                <Clock size={12} color={COLORS.textMuted} style={{ marginRight: 6 }} />
+                <Text style={styles.photoDeleteNote}>
+                  Auto-deletes after 24 hours
+                </Text>
+              </View>
             </TouchableOpacity>
           ) : (
             <TouchableOpacity
@@ -625,9 +689,9 @@ export default function Challenge() {
               disabled={isWeb}
               activeOpacity={0.8}
             >
-              <Text style={styles.captureEmoji}>📷</Text>
+              <Camera size={24} color={COLORS.accent} />
               <Text style={styles.captureText}>
-                {isWeb ? 'Camera unavailable on web' : 'Take Photo'}
+                {isWeb ? 'Camera unavailable on web' : 'Take Photo Proof'}
               </Text>
             </TouchableOpacity>
           )}
@@ -646,13 +710,16 @@ export default function Challenge() {
           {submitting ? (
             <ActivityIndicator color={COLORS.textPrimary} />
           ) : (
-            <Text style={styles.submitButtonText}>
-              {stayTimer < STAY_DURATION
-                ? `Wait ${STAY_DURATION - stayTimer}s`
-                : mediaUrl
-                  ? '✅ Submit Challenge'
-                  : 'Take photo first'}
-            </Text>
+            <View style={styles.submitRow}>
+              <CircleCheck size={18} color={COLORS.textPrimary} style={{ marginRight: 8 }} />
+              <Text style={styles.submitButtonText}>
+                {stayTimer < STAY_DURATION
+                  ? `Wait ${STAY_DURATION - stayTimer}s`
+                  : mediaUrl
+                    ? 'Submit Challenge'
+                    : 'Take photo first'}
+              </Text>
+            </View>
           )}
         </TouchableOpacity>
 
@@ -663,7 +730,8 @@ export default function Challenge() {
             onPress={handleShare}
             activeOpacity={0.8}
           >
-            <Text style={styles.shareButtonText}>📤 Share to Social Media</Text>
+            <Share2 size={18} color={COLORS.accent} style={{ marginRight: 8 }} />
+            <Text style={styles.shareButtonText}>Share Achievement</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -671,7 +739,13 @@ export default function Challenge() {
       {/* Hidden Watermark Capture View */}
       {mediaUrl && (
         <View style={styles.hiddenWatermarkContainer} pointerEvents="none">
-          <View ref={watermarkRef} style={styles.watermarkCapture}>
+          <View 
+            ref={watermarkRef} 
+            style={[
+              styles.watermarkCapture,
+              { aspectRatio: imageSize.width ? imageSize.width / imageSize.height : 1 }
+            ]}
+          >
             <Image source={{ uri: mediaUrl }} style={styles.watermarkImage} />
             <Image 
               source={require('../../assets/Grounded_logo_removed_background.png')} 
@@ -731,14 +805,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: SPACING.xxl,
   },
-  backButton: {
+  backButtonRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  backButtonText: {
     fontSize: FONT.md,
     color: COLORS.accent,
     fontWeight: FONT.semibold,
+    marginLeft: 4,
   },
   headerTitle: {
     fontSize: FONT.lg,
-    fontWeight: FONT.semibold,
+    fontWeight: FONT.bold,
     color: COLORS.textPrimary,
   },
 
@@ -768,10 +847,6 @@ const styles = StyleSheet.create({
   locationRow: {
     flexDirection: 'row',
     alignItems: 'center',
-  },
-  locationIcon: {
-    fontSize: 14,
-    marginRight: SPACING.sm,
   },
   locationText: {
     fontSize: FONT.md,
@@ -837,10 +912,15 @@ const styles = StyleSheet.create({
   statusContent: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: SPACING.lg,
   },
-  statusEmoji: {
-    fontSize: 36,
-    marginRight: SPACING.lg,
+  statusIconContainer: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   statusTextContainer: {
     flex: 1,
@@ -896,27 +976,28 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: COLORS.bgCard,
-    padding: SPACING.xl,
+    backgroundColor: COLORS.bgElevated,
+    padding: SPACING.xxl,
   },
-  mapEmoji: {
-    fontSize: 48,
-    marginBottom: SPACING.md,
-  },
-  mapText: {
-    fontSize: FONT.md,
-    color: COLORS.textSecondary,
-    marginBottom: SPACING.sm,
+  coordRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
   },
   coordText: {
-    fontSize: FONT.xs,
+    fontSize: FONT.sm,
     color: COLORS.textMuted,
-    marginBottom: SPACING.sm,
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+  },
+  distRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
   },
   distanceText: {
     fontSize: FONT.md,
+    fontWeight: FONT.bold,
     color: COLORS.accent,
-    fontWeight: FONT.semibold,
   },
 
   // User Marker
@@ -940,9 +1021,7 @@ const styles = StyleSheet.create({
   // Destination Marker
   destMarker: {
     alignItems: 'center',
-  },
-  destMarkerText: {
-    fontSize: 28,
+    justifyContent: 'center',
   },
 
   // Bottom Actions
@@ -970,47 +1049,47 @@ const styles = StyleSheet.create({
   },
   photoInfo: {
     flex: 1,
-  },
-  photoEmoji: {
-    fontSize: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   photoText: {
     fontSize: FONT.md,
-    color: COLORS.accent,
-    fontWeight: FONT.semibold,
+    fontWeight: FONT.bold,
+    color: COLORS.textPrimary,
   },
   photoHint: {
     fontSize: FONT.xs,
     color: COLORS.textMuted,
-    marginTop: 2,
+    marginLeft: 'auto',
+  },
+  deleteNoteRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: SPACING.md,
   },
   photoDeleteNote: {
     fontSize: FONT.xs,
     color: COLORS.textMuted,
-    marginTop: SPACING.md,
-    paddingTop: SPACING.md,
-    borderTopWidth: 1,
-    borderTopColor: COLORS.border,
-    textAlign: 'center',
+    fontStyle: 'italic',
   },
   captureButton: {
-    flexDirection: 'row',
+    backgroundColor: COLORS.bgElevated,
+    borderRadius: RADIUS.lg,
+    padding: SPACING.xl,
     alignItems: 'center',
+    flexDirection: 'row',
     justifyContent: 'center',
-    backgroundColor: COLORS.bgCard,
-    borderRadius: RADIUS.md,
-    padding: SPACING.lg,
-    borderWidth: 1.5,
+    gap: SPACING.md,
+    borderWidth: 1,
     borderColor: COLORS.border,
-    borderStyle: 'dashed',
-  },
-  captureEmoji: {
-    fontSize: 20,
-    marginRight: SPACING.sm,
+    ...SHADOW.subtle,
   },
   captureText: {
     fontSize: FONT.md,
-    color: COLORS.textSecondary,
+    fontWeight: FONT.bold,
+    color: COLORS.accent,
   },
   submitButton: {
     backgroundColor: COLORS.accent,

@@ -8,11 +8,44 @@ import {
   RefreshControl,
   Platform,
 } from 'react-native';
+import {
+  Flame,
+  Trophy,
+  Star,
+  MapPin,
+  Clock,
+  Camera,
+  CircleCheck,
+  ArrowLeft,
+  ShieldCheck,
+  Zap,
+  TriangleAlert,
+  Share2,
+  Navigation,
+  Target,
+  Timer,
+  Maximize2,
+  CircleX,
+  History,
+  User,
+  Calendar,
+  Award,
+  CheckCircle2,
+  ArrowRight,
+  ThumbsUp,
+  Crown,
+  Medal,
+  ChevronRight
+} from 'lucide-react-native';
+import ArrowUp from 'lucide-react-native/dist/cjs/icons/arrow-up';
 import { collection, query, orderBy, limit, getDocs } from 'firebase/firestore';
 import { db } from '../../src/services/db';
 import { COLORS, FONT, SPACING, RADIUS, SHADOW } from '../../src/constants/theme';
+import { Image, TouchableOpacity } from 'react-native';
+import { useRouter } from 'expo-router';
 
 export default function Leaderboard() {
+  const router = useRouter();
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -49,32 +82,52 @@ export default function Leaderboard() {
   }, [fetchLeaderboard]);
 
   const renderItem = ({ item }) => (
-    <View style={styles.card}>
+    <TouchableOpacity 
+      style={styles.card}
+      onPress={() => router.push(`/user/${item.id}`)}
+      activeOpacity={0.7}
+    >
       <View style={styles.rankContainer}>
-        <Text style={[
-          styles.rankText,
-          item.rank === 1 && styles.rankGold,
-          item.rank === 2 && styles.rankSilver,
-          item.rank === 3 && styles.rankBronze,
-        ]}>
-          {item.rank === 1 ? '🥇' : item.rank === 2 ? '🥈' : item.rank === 3 ? '🥉' : item.rank}
-        </Text>
+        {item.rank === 1 ? (
+          <Crown size={24} color="#FFD700" />
+        ) : item.rank === 2 ? (
+          <Medal size={22} color="#C0C0C0" />
+        ) : item.rank === 3 ? (
+          <Medal size={22} color="#CD7F32" />
+        ) : (
+          <Text style={styles.rankText}>{item.rank}</Text>
+        )}
       </View>
       
+      <View style={styles.avatar}>
+        {item.profilePic ? (
+          <Image source={{ uri: item.profilePic }} style={styles.avatarImage} />
+        ) : (
+          <User size={18} color={COLORS.accent} />
+        )}
+      </View>
+
       <View style={styles.userInfo}>
         <Text style={styles.username} numberOfLines={1}>
-          {item.email?.split('@')[0] || 'Anonymous'}
+          {item.username || 'Grounded User'}
         </Text>
-        <Text style={styles.stats}>
-          🔥 {item.streakCount || 0} day streak
-        </Text>
+        <View style={styles.statsRow}>
+          <Flame size={12} color={COLORS.accent} style={{ marginRight: 4 }} />
+          <Text style={styles.stats}>
+            {item.streakCount || 0} day streak
+          </Text>
+        </View>
       </View>
 
       <View style={styles.scoreContainer}>
-        <Text style={styles.scoreValue}>{item.trustScore?.toFixed(0) || 0}</Text>
+        <View style={styles.scoreRow}>
+          <Star size={14} color={COLORS.accent} style={{ marginRight: 4 }} />
+          <Text style={styles.scoreValue}>{item.trustScore?.toFixed(0) || 0}</Text>
+        </View>
         <Text style={styles.scoreLabel}>Trust</Text>
       </View>
-    </View>
+      <ChevronRight size={16} color={COLORS.textMuted} style={{ marginLeft: 8 }} />
+    </TouchableOpacity>
   );
 
   if (loading) {
@@ -170,18 +223,35 @@ const styles = StyleSheet.create({
     fontWeight: FONT.bold,
     color: COLORS.textSecondary,
   },
-  rankGold: { color: '#FFD700', fontSize: 24 },
-  rankSilver: { color: '#C0C0C0', fontSize: 24 },
-  rankBronze: { color: '#CD7F32', fontSize: 24 },
+  avatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: COLORS.bgElevated,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: SPACING.sm,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  avatarImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 18,
+  },
   userInfo: {
     flex: 1,
-    marginLeft: SPACING.md,
+    marginLeft: SPACING.lg,
   },
   username: {
     fontSize: FONT.md,
-    fontWeight: FONT.semibold,
+    fontWeight: FONT.bold,
     color: COLORS.textPrimary,
-    marginBottom: 2,
+  },
+  statsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 2,
   },
   stats: {
     fontSize: FONT.xs,
@@ -189,7 +259,11 @@ const styles = StyleSheet.create({
   },
   scoreContainer: {
     alignItems: 'flex-end',
-    minWidth: 60,
+    minWidth: 70,
+  },
+  scoreRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   scoreValue: {
     fontSize: FONT.lg,
