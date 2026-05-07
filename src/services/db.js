@@ -18,7 +18,7 @@ export const createUserDoc = async (user) => {
             lastUsernameChangeDate: null,
             streakCount: 0,
             totalCompletions: 0,
-            trustScore: 50,
+            trustScore: 0,
 
             lastCompletedDate: null,
             lastMissedDate: null,

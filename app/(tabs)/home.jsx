@@ -37,7 +37,8 @@ import {
   ThumbsUp,
   Crown,
   Medal,
-  Eye, EyeOff
+  Eye, EyeOff,
+  MapPinOff,
 } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { useAuthStore } from '../../src/store/authStore';
@@ -45,7 +46,7 @@ import { getUserDoc } from '../../src/services/db';
 import { getTodayChallenge } from '../../src/services/challenge';
 import { hasUserSubmittedToday } from '../../src/services/submission';
 import { getRandomQuote } from '../../src/constants/messages';
-import { BADGES } from '../../src/constants/config';
+import { BADGES, TRUST_CONFIG } from '../../src/constants/config';
 import { COLORS, FONT, SPACING, RADIUS, SHADOW } from '../../src/constants/theme';
 
 export default function Home() {
@@ -58,6 +59,7 @@ export default function Home() {
   const [refreshing, setRefreshing] = useState(false);
   const [quote, setQuote] = useState(getRandomQuote());
   const [profilePicRatio, setProfilePicRatio] = useState(1);
+  const [regionStatus, setRegionStatus] = useState(null); // null | 'outside'
 
   const fetchData = useCallback(async () => {
     if (!user) return;
@@ -70,6 +72,9 @@ export default function Home() {
       setUserData(userDoc);
       setChallenge(todayChallenge);
       setAlreadySubmitted(submittedToday);
+      // Surface region lock status from challenge doc
+      if (todayChallenge?.regionLocked) setRegionStatus('outside');
+      else setRegionStatus(null);
     } catch (error) {
       console.error('Error fetching home data:', error);
     } finally {
@@ -155,6 +160,16 @@ export default function Home() {
         </TouchableOpacity>
       </View>
 
+      {/* Region-paused banner */}
+      {regionStatus === 'outside' && (
+        <View style={styles.regionBanner}>
+          <MapPinOff size={16} color={COLORS.warning} style={{ marginRight: 8 }} />
+          <Text style={styles.regionBannerText}>
+            Progression paused until you return to Manipal.
+          </Text>
+        </View>
+      )}
+
       {/* Today's Challenge Card */}
       <TouchableOpacity
         style={styles.challengeCard}
@@ -229,20 +244,22 @@ export default function Home() {
       <View style={styles.trustCard}>
         <View style={styles.trustHeader}>
           <Text style={styles.trustTitle}>Trust Score</Text>
-          <Text style={styles.trustValue}>{userData?.trustScore || 50}/100</Text>
+          <Text style={styles.trustValue}>{userData?.trustScore ?? 0}/100</Text>
         </View>
         <View style={styles.trustBarBg}>
           <View
             style={[
               styles.trustBarFill,
-              { width: `${Math.min(userData?.trustScore || 50, 100)}%` }
+              { width: `${Math.min(userData?.trustScore || 0, 100)}%` }
             ]}
           />
         </View>
         <Text style={styles.trustHint}>
-          {(userData?.trustScore || 50) >= 80 ? 'Excellent standing!' :
-            (userData?.trustScore || 50) >= 60 ? 'Good progress — keep showing up.' :
-              'Show up daily to build trust.'}
+          {(userData?.trustScore || 0) >= TRUST_CONFIG.rewardThreshold
+            ? 'Excellent standing!'
+            : (userData?.trustScore || 0) >= 40
+              ? 'Good progress — keep showing up.'
+              : 'Show up daily to build trust.'}
         </Text>
 
         {/* Breakdown */}
@@ -656,5 +673,21 @@ const styles = StyleSheet.create({
     fontSize: FONT.sm,
     color: COLORS.warning,
     textAlign: 'center',
+  },
+  // Region paused banner
+  regionBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.warningBg,
+    borderRadius: RADIUS.md,
+    padding: SPACING.md,
+    marginBottom: SPACING.lg,
+    borderWidth: 1,
+    borderColor: 'rgba(245, 158, 11, 0.3)',
+  },
+  regionBannerText: {
+    fontSize: FONT.sm,
+    color: COLORS.warning,
+    flex: 1,
   },
 });

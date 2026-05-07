@@ -1,55 +1,134 @@
-export const calculateScore = ({ 
-  distance, 
-  stayTime, 
-  targetStayTime, 
-  hasMedia, 
+import { SCORING_CONFIG, TRUST_CONFIG, STREAK_CONFIG, TIME_WINDOWS } from '../constants/config';
+
+/**
+ * Determine which time window the given minutes-from-midnight falls into.
+ * Returns 'primary' | 'late' | null
+ */
+export const getTimeWindow = (minutesFromMidnight) => {
+  const { primary, late } = TIME_WINDOWS;
+  if (minutesFromMidnight >= primary.start && minutesFromMidnight <= primary.end) return 'primary';
+  if (minutesFromMidnight >= late.start && minutesFromMidnight <= late.end) return 'late';
+  return null;
+};
+
+/**
+ * Returns true if submission is allowed at the given time.
+ */
+export const isSubmissionAllowed = (minutesFromMidnight) => {
+  return getTimeWindow(minutesFromMidnight) !== null;
+};
+
+/**
+ * Returns current minutes from midnight (local device clock).
+ * Used for UI only — backend uses server timestamp.
+ */
+export const getCurrentMinutes = () => {
+  const now = new Date();
+  return now.getHours() * 60 + now.getMinutes();
+};
+
+/**
+ * Calculate raw session score.
+ * @param {object} params
+ * @param {number} params.distance - distance in meters from target
+ * @param {number} params.stayTime - seconds stayed
+ * @param {number} params.targetStayTime - required seconds
+ * @param {boolean} params.hasMedia - photo uploaded
+ * @param {number} params.streakCount - current streak
+ * @param {boolean} params.isCleanSession - no mocked GPS flags
+ * @param {'primary'|'late'} params.timeWindow - which time window
+ * @returns {object} score breakdown
+ */
+export const calculateScore = ({
+  distance,
+  stayTime,
+  targetStayTime,
+  hasMedia,
   streakCount = 0,
-  isCleanSession = true 
+  isCleanSession = true,
+  timeWindow = 'primary',
 }) => {
+  const { location, stay, proof, integrity, streak } = SCORING_CONFIG;
+
   let locationScore = 0;
-  if (distance < 50) locationScore = 30;
-  else if (distance < 100) locationScore = 20;
+  if (distance < 30) locationScore = location.perfect;
+  else if (distance < 100) locationScore = location.good;
+  else if (distance < 200) locationScore = location.ok;
 
   let timeScore = 0;
-  if (stayTime >= targetStayTime) timeScore = 25;
-  else if (stayTime >= targetStayTime / 2) timeScore = 10;
+  if (stayTime >= targetStayTime) timeScore = stay.full;
+  else if (stayTime >= targetStayTime / 2) timeScore = stay.partial;
 
-  const proofScore = hasMedia ? 15 : 0;
-  const integrityScore = isCleanSession ? 10 : 0;
-  const streakBonus = streakCount >= 3 ? 5 : 0;
+  const proofScore = hasMedia ? proof : 0;
+  const integrityScore = isCleanSession ? integrity : 0;
 
-  const totalScore = locationScore + timeScore + proofScore + integrityScore + streakBonus;
+  const rawStreakBonus =
+    streakCount >= streak.minForBonus
+      ? Math.min(streakCount * streak.perDay, streak.max)
+      : 0;
+
+  const rawTotal = locationScore + timeScore + proofScore + integrityScore + rawStreakBonus;
+
+  // Apply window multiplier (late window = 0.7)
+  const windowCfg = TIME_WINDOWS[timeWindow];
+  const multiplier = windowCfg ? windowCfg.scoreMultiplier : 1.0;
+  const totalScore = Math.min(100, Math.round(rawTotal * multiplier));
 
   return {
-    score: Math.min(100, totalScore),
+    score: totalScore,
     locationScore,
     timeScore,
     proofScore,
     integrityScore,
-    streakBonus,
+    streakBonus: rawStreakBonus,
     distance,
+    timeWindow,
+    isCleanSession,
   };
 };
 
 /**
- * Calculate the change in trust score based on session performance.
+ * Calculate trust score delta for a completed session.
+ * Late window submissions get trustMultiplier applied.
+ * @param {number} score - session score (0–100)
+ * @param {number} streakCount - current streak
+ * @param {'primary'|'late'} timeWindow
+ * @param {boolean} isSuspicious - mocked GPS or other flag
+ * @returns {number} delta to apply to trust score
  */
-export const calculateTrustDelta = (score, streakCount, isSuspicious = false) => {
+export const calculateTrustDelta = (score, streakCount, timeWindow = 'primary', isSuspicious = false) => {
+  const { onTimeDelta, lowScorePenalty } = TRUST_CONFIG;
+  const windowCfg = TIME_WINDOWS[timeWindow];
+  const trustMult = windowCfg ? windowCfg.trustMultiplier : 1.0;
+
   let delta = 0;
-  
+
   if (score >= 70) {
-    delta = score * 0.1; // score 80 -> +8
+    delta = onTimeDelta * trustMult;         // primary: +8, late: +4
   } else if (score >= 40) {
-    delta = score * 0.05; // score 50 -> +2.5
+    delta = (onTimeDelta / 2) * trustMult;  // primary: +4, late: +2
   } else {
-    delta = -5; // Penalty for low score
+    delta = lowScorePenalty;                // -3, no multiplier
   }
 
-  // Bonus for consistency
-  if (streakCount >= 3) delta += 2;
-  
-  // Penalty for suspicious activity
+  // Streak consistency bonus (also reduced in late window)
+  if (streakCount >= STREAK_CONFIG.minForBonus) {
+    delta += STREAK_CONFIG.bonusPerDay * trustMult;
+  }
+
   if (isSuspicious) delta -= 3;
 
-  return delta;
+  return parseFloat(delta.toFixed(2));
+};
+
+/**
+ * Calculate penalty for missed days.
+ * Only call this if user is INSIDE region.
+ * @param {number} daysMissed - number of consecutive days missed
+ * @returns {number} negative delta
+ */
+export const calculateMissedDayPenalty = (daysMissed) => {
+  const { missedDayPenalty, streakBreakPenalty, missedDayPenaltyCap } = TRUST_CONFIG;
+  const rawPenalty = daysMissed * missedDayPenalty + streakBreakPenalty;
+  return Math.max(rawPenalty, missedDayPenaltyCap); // cap so one gap can't destroy score
 };

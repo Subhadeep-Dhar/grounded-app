@@ -165,3 +165,37 @@ export const sendMissNotification = async () => {
     console.error('Miss notification error:', error);
   }
 };
+
+// ─── Region-aware pause / resume ─────────────────────────────────────────────
+// Always cancels existing schedules before re-scheduling (idempotent).
+// Prevents duplicate stacking across pause/resume cycles.
+
+/**
+ * Pause all scheduled notifications.
+ * Called when user exits Manipal region.
+ */
+export const pauseNotifications = async () => {
+  if (isDisabled) return;
+  try {
+    await Notifications.cancelAllScheduledNotificationsAsync();
+    console.log('[Notifications] Paused — outside region.');
+  } catch (e) {
+    console.warn('[Notifications] pauseNotifications error:', e);
+  }
+};
+
+/**
+ * Resume scheduled notifications.
+ * Cancels first to prevent stacking, then re-schedules.
+ * Called when user returns to Manipal region.
+ */
+export const resumeNotifications = async () => {
+  if (isDisabled) return;
+  try {
+    await Notifications.cancelAllScheduledNotificationsAsync();
+    await scheduleAllNotifications();
+    console.log('[Notifications] Resumed — inside region.');
+  } catch (e) {
+    console.warn('[Notifications] resumeNotifications error:', e);
+  }
+};

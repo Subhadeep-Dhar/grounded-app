@@ -20,8 +20,12 @@ import { getTodayChallenge } from '../../src/services/challenge';
 import { getCurrentLocation, watchUserLocation } from '../../src/services/gps';
 import { captureImage } from '../../src/services/camera';
 import { submitChallenge, hasUserSubmittedToday, getTodaySubmission } from '../../src/services/submission';
-import { sendArrivalNotification, sendCompletionNotification } from '../../src/services/notifications';
+import { sendArrivalNotification, sendCompletionNotification, pauseNotifications, resumeNotifications } from '../../src/services/notifications';
 import { getDistance } from '../../src/utils/location';
+import { getSession, startSession as dbStartSession, markArrived, resetArrival, unlockVerification, logSuspicion } from '../../src/services/session';
+import { isInsideRegion, evaluateRegion } from '../../src/services/region';
+import { getTimeWindow, isSubmissionAllowed, getCurrentMinutes } from '../../src/utils/scoring';
+import { SESSION_STATES, TIME_WINDOWS, STAY_DURATION } from '../../src/constants/config';
 import {
   Flame,
   Trophy,
@@ -50,13 +54,14 @@ import {
   Crown,
   Medal,
   ChevronRight,
-  Eye, EyeOff
+  Eye, EyeOff,
+  Lock,
+  MapPinOff,
 } from 'lucide-react-native';
-import { COLORS, FONT, SPACING, RADIUS, SHADOW, STAY_DURATION } from '../../src/constants/theme';
+import { COLORS, FONT, SPACING, RADIUS, SHADOW } from '../../src/constants/theme';
 import { getUserDoc } from '../../src/services/db';
 import { doc, setDoc } from 'firebase/firestore';
 import { db } from '../../src/lib/firebase';
-import { runTransaction } from 'firebase/firestore';
 
 const { width } = Dimensions.get('window');
 const isNative = Platform.OS !== 'web';
@@ -81,15 +86,21 @@ export default function Challenge() {
 
   const [challenge, setChallenge] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [sessionState, setSessionState] = useState('idle'); // idle, tracking, arrived, staying, completed
+  const [sessionState, setSessionState] = useState(SESSION_STATES.NOT_STARTED);
   const [userLocation, setUserLocation] = useState(null);
   const [stayTimer, setStayTimer] = useState(0);
+  const [countdownEndsAt, setCountdownEndsAt] = useState(null); // persisted across restarts
   const [mediaUrl, setMediaUrl] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [submissionResult, setSubmissionResult] = useState(null);
   const [locationError, setLocationError] = useState(null);
   const [distance, setDistance] = useState(null);
   const [photoRatio, setPhotoRatio] = useState(1);
+  const [imageSize, setImageSize] = useState({ width: 0, height: 0 });
+  const [isRegionLocked, setIsRegionLocked] = useState(false);
+  const [regionStatus, setRegionStatus] = useState('unknown'); // 'inside'|'outside'|'unknown'
+  const [timeWindow, setTimeWindow] = useState(null); // 'primary'|'late'|null
+  const [isExpired, setIsExpired] = useState(false);
 
   const watchSub = useRef(null);
   const stayInterval = useRef(null);
@@ -104,32 +115,69 @@ export default function Challenge() {
 
   const fetchChallenge = useCallback(async () => {
     if (!user) return;
-
     try {
-      // GET USER DATA
-      const userDoc = await getUserDoc(user.uid);
-
-      // BLOCK IF ALREADY COMPLETED
       const submittedToday = await hasUserSubmittedToday(user.uid);
       if (submittedToday) {
         const subData = await getTodaySubmission(user.uid);
         setSubmissionResult(subData);
         setMediaUrl(subData?.mediaUrl);
-        setSessionState('completed'); // reuse completed UI
+        setSessionState(SESSION_STATES.SUBMITTED);
         setLoading(false);
         return;
       }
 
-      const todayChallenge = await getTodayChallenge(user.uid);
+      // Check time window on mount (device clock for UI; backend validates server time)
+      const mins = getCurrentMinutes();
+      const window = getTimeWindow(mins);
+      setTimeWindow(window);
+      if (!window) setIsExpired(true);
 
+      // Restore persisted session from Firestore (prevent restart bypass)
+      const today = new Date().toDateString();
+      const existingSession = await getSession(user.uid, today);
+      if (existingSession) {
+        const { state, countdownEndsAt: cEnd } = existingSession;
+        if (state === SESSION_STATES.SUBMITTED) {
+          const subData = await getTodaySubmission(user.uid);
+          setSubmissionResult(subData);
+          setSessionState(SESSION_STATES.SUBMITTED);
+          setLoading(false);
+          return;
+        }
+        if (state === SESSION_STATES.VERIFICATION_UNLOCKED) {
+          setSessionState(SESSION_STATES.VERIFICATION_UNLOCKED);
+          setCountdownEndsAt(cEnd || null);
+          setStayTimer(STAY_DURATION);
+        } else if (state === SESSION_STATES.ARRIVED_WAITING) {
+          const now = Date.now();
+          if (cEnd && now >= cEnd) {
+            // Countdown already elapsed while app was closed → auto-unlock
+            try { await unlockVerification(user.uid, today); } catch (_) {}
+            setSessionState(SESSION_STATES.VERIFICATION_UNLOCKED);
+            setStayTimer(STAY_DURATION);
+          } else {
+            // Restore countdown in progress
+            setSessionState(SESSION_STATES.ARRIVED_WAITING);
+            setCountdownEndsAt(cEnd || null);
+            const elapsed = cEnd ? Math.max(0, Math.floor((STAY_DURATION * 1000 - (cEnd - now)) / 1000)) : 0;
+            setStayTimer(elapsed);
+          }
+        } else if (state === SESSION_STATES.TRAVELING) {
+          setSessionState(SESSION_STATES.TRAVELING);
+        }
+      }
+
+      const todayChallenge = await getTodayChallenge(user.uid);
       setChallenge(todayChallenge);
 
-      if (todayChallenge.status === 'completed') {
-        setSessionState('completed');
+      if (todayChallenge.regionLocked) {
+        setIsRegionLocked(true);
+        setRegionStatus('outside');
+        pauseNotifications().catch(() => {});
       }
 
     } catch (error) {
-      console.error('Error fetching challenge:', error);
+      console.error('[Challenge] fetchChallenge error:', error);
     } finally {
       setLoading(false);
     }
@@ -139,11 +187,27 @@ export default function Challenge() {
     fetchChallenge();
   }, [fetchChallenge]);
 
-  // Stay timer
+  // Stay countdown — increments every second during ARRIVED_WAITING
+  // Auto-unlocks verification when countdownEndsAt is reached
   useEffect(() => {
-    if (sessionState === 'staying') {
-      stayInterval.current = setInterval(() => {
-        setStayTimer(prev => prev + 1);
+    if (sessionState === SESSION_STATES.ARRIVED_WAITING) {
+      stayInterval.current = setInterval(async () => {
+        setStayTimer((prev) => {
+          const next = prev + 1;
+          return next;
+        });
+        // Check if countdown elapsed
+        if (countdownEndsAt && Date.now() >= countdownEndsAt) {
+          clearInterval(stayInterval.current);
+          setStayTimer(STAY_DURATION);
+          try {
+            const today = new Date().toDateString();
+            await unlockVerification(user.uid, today);
+            setSessionState(SESSION_STATES.VERIFICATION_UNLOCKED);
+          } catch (e) {
+            console.warn('[Challenge] unlockVerification error:', e);
+          }
+        }
       }, 1000);
     } else {
       if (stayInterval.current) clearInterval(stayInterval.current);
@@ -151,7 +215,7 @@ export default function Challenge() {
     return () => {
       if (stayInterval.current) clearInterval(stayInterval.current);
     };
-  }, [sessionState]);
+  }, [sessionState, countdownEndsAt, user]);
 
   // Cleanup watch
   useEffect(() => {
@@ -173,51 +237,72 @@ export default function Challenge() {
   };
 
   const startSession = async () => {
-    console.log("START SESSION");
-
     setLocationError(null);
     setLoading(true);
-
     try {
-      // STEP 1: Get location safely
-      const location = await getCurrentLocation();
+      // Guard: time window must be open
+      const mins = getCurrentMinutes();
+      const window = getTimeWindow(mins);
+      if (!window) {
+        setIsExpired(true);
+        Alert.alert(
+          'Window Closed',
+          'Challenges are only available 5:00–7:30 AM or 6:00–9:00 PM.'
+        );
+        return;
+      }
+      setTimeWindow(window);
 
+      // Get location
+      const location = await getCurrentLocation();
       if (!location || !location.coords) {
         setLocationError('Unable to fetch location. Please try again.');
         Alert.alert('Location Error', 'Could not get your location.');
         return;
       }
 
-      // Small delay to stabilize GPS after permission // will be changed later
-      await new Promise(resolve => setTimeout(resolve, 800));
+      await new Promise((resolve) => setTimeout(resolve, 800));
 
       const newLoc = {
         latitude: location.coords.latitude,
         longitude: location.coords.longitude,
       };
-
       setUserLocation(newLoc);
-      setSessionState('tracking');
 
-      // STEP 2: Initial distance calculation
+      // Region check
+      const inside = isInsideRegion(newLoc.latitude, newLoc.longitude);
+      setIsRegionLocked(!inside);
+      setRegionStatus(inside ? 'inside' : 'outside');
+      if (!inside) {
+        pauseNotifications().catch(() => {});
+        Alert.alert(
+          'Outside Manipal',
+          'Progression is paused until you return to Manipal. You can still browse the app.'
+        );
+        return;
+      }
+
+      // Resume notifications if previously paused
+      resumeNotifications().catch(() => {});
+
+      // Persist session start in Firestore
+      const today = new Date().toDateString();
+      await dbStartSession(user.uid, today);
+      setSessionState(SESSION_STATES.TRAVELING);
+
+      // Initial distance
       if (challenge) {
         const dist = getDistance(
-          newLoc.latitude,
-          newLoc.longitude,
-          challenge.latitude,
-          challenge.longitude
+          newLoc.latitude, newLoc.longitude,
+          challenge.latitude, challenge.longitude
         );
         setDistance(dist);
       }
 
-      // STEP 3: Start watcher safely (delayed but controlled)
+      // Start location watcher
       const startWatcher = async () => {
         try {
-          // Prevent duplicate watchers
-          if (watchSub.current) {
-            watchSub.current.remove();
-            watchSub.current = null;
-          }
+          if (watchSub.current) { watchSub.current.remove(); watchSub.current = null; }
 
           watchSub.current = await watchUserLocation((loc) => {
             if (!loc || !loc.coords) return;
@@ -226,24 +311,43 @@ export default function Challenge() {
               latitude: loc.coords.latitude,
               longitude: loc.coords.longitude,
             };
-
             setUserLocation(updatedLoc);
+
+            // Mocked GPS detection (Expo exposes loc.mocked on Android)
+            if (loc.mocked === true) {
+              logSuspicion(user.uid, new Date().toDateString(), 'MOCKED_GPS').catch(() => {});
+            }
+
+            // Region re-evaluation on each GPS update (battery-efficient — no polling)
+            const inside = isInsideRegion(updatedLoc.latitude, updatedLoc.longitude);
+            setIsRegionLocked(!inside);
+            setRegionStatus(inside ? 'inside' : 'outside');
 
             if (challenge) {
               const dist = getDistance(
-                updatedLoc.latitude,
-                updatedLoc.longitude,
-                challenge.latitude,
-                challenge.longitude
+                updatedLoc.latitude, updatedLoc.longitude,
+                challenge.latitude, challenge.longitude
               );
-
               setDistance(dist);
 
-              if (
-                dist <= challenge.radius &&
-                sessionStateRef.current === 'tracking'
-              ) {
-                handleArrival();
+              const currentState = sessionStateRef.current;
+
+              // Arrival detection: only trigger if time window open + inside region
+              if (dist <= challenge.radius && currentState === SESSION_STATES.TRAVELING && inside) {
+                const nowMins = getCurrentMinutes();
+                if (isSubmissionAllowed(nowMins)) {
+                  handleArrival();
+                }
+              }
+
+              // Anti-passive-wait: exit radius resets timer
+              if (dist > challenge.radius && currentState === SESSION_STATES.ARRIVED_WAITING) {
+                const today = new Date().toDateString();
+                resetArrival(user.uid, today).catch(() => {});
+                setSessionState(SESSION_STATES.TRAVELING);
+                setStayTimer(0);
+                setCountdownEndsAt(null);
+                Alert.alert('Left the area', 'Timer reset. Return to the location to continue.');
               }
             }
 
@@ -251,28 +355,20 @@ export default function Challenge() {
             if (mapRef.current) {
               try {
                 mapRef.current.animateToRegion(
-                  {
-                    ...updatedLoc,
-                    latitudeDelta: 0.005,
-                    longitudeDelta: 0.005,
-                  },
+                  { ...updatedLoc, latitudeDelta: 0.005, longitudeDelta: 0.005 },
                   500
                 );
-              } catch (e) {
-                console.log("Map animation error:", e);
-              }
+              } catch (e) {}
             }
           });
         } catch (e) {
-          console.log("Watcher error prevented:", e);
+          console.log('[Challenge] Watcher error:', e);
         }
       };
 
-      // Delay execution (safe scheduling)
       setTimeout(startWatcher, 1200);
-
     } catch (error) {
-      console.log("Start session error:", error);
+      console.log('[Challenge] startSession error:', error);
       setLocationError('Unable to get location. Please enable GPS.');
       Alert.alert('Error', 'Please enable location services and try again.');
     } finally {
@@ -280,19 +376,29 @@ export default function Challenge() {
     }
   };
 
-  const handleArrival = () => {
-    setSessionState('arrived');
-    sendArrivalNotification();
-
-    // Stop watching (save battery)
-    if (watchSub.current) {
-      watchSub.current.remove();
-      watchSub.current = null;
+  const handleArrival = async () => {
+    // Validate time window hasn't closed since session start
+    const nowMins = getCurrentMinutes();
+    if (!isSubmissionAllowed(nowMins)) {
+      setIsExpired(true);
+      setSessionState(SESSION_STATES.EXPIRED);
+      return;
     }
 
-    setTimeout(() => {
-      setSessionState('staying');
-    }, 1500);
+    try {
+      const today = new Date().toDateString();
+      const session = await markArrived(user.uid, today);
+      setCountdownEndsAt(session.countdownEndsAt);
+      setSessionState(SESSION_STATES.ARRIVED_WAITING);
+      setStayTimer(0);
+      sendArrivalNotification();
+    } catch (e) {
+      console.warn('[Challenge] handleArrival error:', e);
+      // Fallback: still transition UI
+      setSessionState(SESSION_STATES.ARRIVED_WAITING);
+      setCountdownEndsAt(Date.now() + STAY_DURATION * 1000);
+      setStayTimer(0);
+    }
   };
 
   const handleCapture = async () => {
@@ -302,13 +408,16 @@ export default function Challenge() {
         setMediaUrl(uri);
         Image.getSize(uri, (w, h) => {
           setPhotoRatio(w / h);
+          setImageSize({ width: w, height: h });
         }, (err) => {
           console.warn('Failed to get capture image size', err);
           setPhotoRatio(1);
+          setImageSize({ width: 0, height: 0 });
         });
       }
     } catch (error) {
-      Alert.alert('Camera Error', 'Unable to access camera.');
+      console.error('handleCapture error:', error);
+      Alert.alert('Camera Error', 'Unable to access camera or capture image.');
     }
   };
 
@@ -341,58 +450,50 @@ export default function Challenge() {
   };
 
   const handleSubmit = async () => {
-    if (submitting) return; // prevent double click
-
+    if (submitting) return;
     setSubmitting(true);
-
     try {
-      // validations
       if (!mediaUrl) {
         Alert.alert('Required', 'Please capture a photo before submitting.');
-        setSubmitting(false);
+        return;
+      }
+      if (sessionState !== SESSION_STATES.VERIFICATION_UNLOCKED) {
+        Alert.alert('Not yet', 'Complete the stay timer first.');
+        return;
+      }
+      if (isRegionLocked) {
+        Alert.alert('Outside Manipal', 'Progression is paused until you return to Manipal.');
         return;
       }
 
-      if (stayTimer < STAY_DURATION) {
-        Alert.alert(
-          'Wait',
-          `Stay for ${Math.ceil((STAY_DURATION - stayTimer) / 60)} more minute(s).`
-        );
-        setSubmitting(false);
-        return;
-      }
-
-      // 1. Capture watermarked image for the feed/database
+      // Watermark capture
       let finalMediaUri = mediaUrl;
       try {
-        finalMediaUri = await captureRef(watermarkRef, {
-          format: 'png',
-          quality: 0.8, // Slightly lower for storage efficiency but still good
-        });
+        finalMediaUri = await captureRef(watermarkRef, { format: 'jpg', quality: 0.7 });
       } catch (e) {
-        console.log("Watermark capture failed, using raw image", e);
+        console.log('[Challenge] Watermark capture failed, using raw image:', e);
       }
 
-      // 2. submit challenge
       const result = await submitChallenge(
         user.uid,
         { ...challenge, stayTime: stayTimer },
         finalMediaUri,
-        userLocation
+        userLocation,
+        sessionState,       // pass session state for server-side guard
+        !isRegionLocked     // isInsideRegion
       );
 
       setSubmissionResult(result);
-
       sendCompletionNotification();
-      setSessionState('completed');
+      setSessionState(SESSION_STATES.SUBMITTED);
 
+      const windowLabel = result.timeWindow === 'late' ? ' (Evening window — reduced trust gain)' : '';
       Alert.alert(
         '🎉 Challenge Complete!',
-        `Score: ${result.score} • Status: ${result.status}\nGreat job showing up today.`
+        `Score: ${result.score} • Trust: ${result.newTrustScore?.toFixed(0) ?? '?'}${windowLabel}\nGreat job showing up today.`
       );
-
     } catch (error) {
-      console.error('Submit error:', error);
+      console.error('[Challenge] Submit error:', error);
       Alert.alert('Submission Error', error.message || 'Failed to submit.');
     } finally {
       setSubmitting(false);
@@ -416,8 +517,8 @@ export default function Challenge() {
 
   const isWeb = Platform.OS === 'web';
 
-  // ─── COMPLETED STATE ────────────────────────
-  if (sessionState === 'completed') {
+  // ─── SUBMITTED STATE ─────────────────────────
+  if (sessionState === SESSION_STATES.SUBMITTED) {
     const res = submissionResult || {};
     const statusLabel = res.score >= 80 ? 'Excellent' : res.score >= 60 ? 'Good' : 'Needs improvement';
     const statusColor = res.score >= 80 ? COLORS.success : res.score >= 60 ? COLORS.warning : COLORS.error;
@@ -479,8 +580,50 @@ export default function Challenge() {
     );
   }
 
-  // ─── IDLE STATE ─────────────────────────────
-  if (sessionState === 'idle') {
+  // ─── EXPIRED STATE ────────────────────────────
+  if (sessionState === SESSION_STATES.EXPIRED || isExpired) {
+    return (
+      <View style={styles.container}>
+        <ScrollView contentContainerStyle={styles.completedContainer}>
+          <CircleX size={64} color={COLORS.error} style={{ marginBottom: SPACING.xl }} />
+          <Text style={styles.completedTitle}>Window Closed</Text>
+          <View style={[styles.statusBadgeLarge, { backgroundColor: COLORS.errorBg, borderColor: COLORS.error }]}>
+            <Text style={[styles.statusBadgeTextLarge, { color: COLORS.error }]}>Expired</Text>
+          </View>
+          <Text style={styles.completedText}>
+            Today's submission window has closed.{'\n'}Come back tomorrow between 5:00–7:30 AM.
+          </Text>
+          <TouchableOpacity style={styles.homeButton} onPress={() => router.push('/(tabs)/home')} activeOpacity={0.8}>
+            <Text style={styles.homeButtonText}>Back to Home</Text>
+          </TouchableOpacity>
+        </ScrollView>
+      </View>
+    );
+  }
+
+  // ─── REGION LOCKED STATE ─────────────────────
+  if (isRegionLocked && sessionState === SESSION_STATES.NOT_STARTED) {
+    return (
+      <View style={styles.container}>
+        <ScrollView contentContainerStyle={styles.completedContainer}>
+          <MapPinOff size={64} color={COLORS.warning} style={{ marginBottom: SPACING.xl }} />
+          <Text style={styles.completedTitle}>Outside Manipal</Text>
+          <View style={[styles.statusBadgeLarge, { backgroundColor: COLORS.warningBg, borderColor: COLORS.warning }]}>
+            <Text style={[styles.statusBadgeTextLarge, { color: COLORS.warning }]}>Progression Paused</Text>
+          </View>
+          <Text style={styles.completedText}>
+            Progression is paused until you return to Manipal.{'\n'}{'\n'}You can still browse the feed, profile, and leaderboard.
+          </Text>
+          <TouchableOpacity style={styles.homeButton} onPress={() => router.push('/(tabs)/home')} activeOpacity={0.8}>
+            <Text style={styles.homeButtonText}>Back to Home</Text>
+          </TouchableOpacity>
+        </ScrollView>
+      </View>
+    );
+  }
+
+  // ─── NOT_STARTED STATE ────────────────────────
+  if (sessionState === SESSION_STATES.NOT_STARTED) {
     return (
       <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent}>
         {/* Header */}
@@ -530,54 +673,78 @@ export default function Challenge() {
     );
   }
 
-  // ─── TRACKING / ARRIVED / STAYING STATE ─────
+  // ─── TRAVELING / ARRIVED_WAITING / VERIFICATION_UNLOCKED STATE ─────
+  const isVerificationUnlocked = sessionState === SESSION_STATES.VERIFICATION_UNLOCKED;
+  const isArrived = sessionState === SESSION_STATES.ARRIVED_WAITING || isVerificationUnlocked;
+  const isInCountdown = sessionState === SESSION_STATES.ARRIVED_WAITING;
+  const remainingSeconds = Math.max(0, STAY_DURATION - stayTimer);
+
   return (
     <View style={styles.container}>
+      {/* Region-paused banner (when inside a session but temporarily outside geofence) */}
+      {isRegionLocked && (
+        <View style={[styles.statusBanner, { backgroundColor: COLORS.warningBg, paddingTop: Platform.OS === 'ios' ? 60 : 44, paddingBottom: SPACING.md }]}>
+          <View style={styles.statusContent}>
+            <MapPinOff size={20} color={COLORS.warning} />
+            <Text style={[styles.statusTitle, { color: COLORS.warning, marginLeft: SPACING.md, fontSize: FONT.sm }]}>
+              Progression paused until you return to Manipal.
+            </Text>
+          </View>
+        </View>
+      )}
+
       {/* Status Banner */}
+      {!isRegionLocked && (
       <View style={[
         styles.statusBanner,
-        sessionState === 'tracking' && styles.statusTracking,
-        sessionState === 'arrived' && styles.statusArrived,
-        sessionState === 'staying' && styles.statusStaying,
+        sessionState === SESSION_STATES.TRAVELING && styles.statusTracking,
+        isArrived && !isVerificationUnlocked && styles.statusArrived,
+        isVerificationUnlocked && styles.statusStaying,
       ]}>
         <View style={styles.statusContent}>
           <View style={styles.statusIconContainer}>
-            {sessionState === 'tracking' ? (
+            {sessionState === SESSION_STATES.TRAVELING ? (
               <Navigation size={24} color="white" />
-            ) : sessionState === 'arrived' ? (
-              <Target size={24} color="white" />
+            ) : isVerificationUnlocked ? (
+              <CircleCheck size={24} color="white" />
             ) : (
               <Timer size={24} color="white" />
             )}
           </View>
           <View style={styles.statusTextContainer}>
             <Text style={styles.statusTitle}>
-              {sessionState === 'tracking' ? 'Navigating...' :
-                sessionState === 'arrived' ? 'You Arrived!' :
+              {sessionState === SESSION_STATES.TRAVELING ? 'Navigating...' :
+                isVerificationUnlocked ? 'Verification Unlocked!' :
                   'Stay Put!'}
             </Text>
             <Text style={styles.statusSubtitle}>
-              {sessionState === 'tracking' ? getDistanceText(distance) :
-                sessionState === 'arrived' ? 'Hold your position' :
+              {sessionState === SESSION_STATES.TRAVELING ? getDistanceText(distance) :
+                isVerificationUnlocked ? 'Take your photo and submit.' :
                   `${formatTime(stayTimer)} / ${formatTime(STAY_DURATION)}`}
             </Text>
           </View>
         </View>
       </View>
+      )}
 
-      {/* Progress Bar for Staying */}
-      {sessionState === 'staying' && (
+      {/* Progress Bar */}
+      {(isArrived) && (
         <View style={styles.progressContainer}>
           <View style={styles.progressBar}>
             <View
               style={[
                 styles.progressFill,
-                { width: `${Math.min((stayTimer / STAY_DURATION) * 100, 100)}%` }
+                { width: `${Math.min((stayTimer / STAY_DURATION) * 100, 100)}%` },
+                isVerificationUnlocked && { backgroundColor: COLORS.success },
               ]}
             />
           </View>
           <Text style={styles.progressText}>
-            {stayTimer >= STAY_DURATION ? '✅ Stay complete!' : 'Stay for 2 minutes to verify'}
+            {isVerificationUnlocked
+              ? '✅ Stay complete! Take your photo.'
+              : isInCountdown
+                ? `Hold position — ${remainingSeconds}s remaining`
+                : 'Stay for the required duration'}
           </Text>
         </View>
       )}
@@ -665,16 +832,13 @@ export default function Challenge() {
       <View style={styles.bottomActions}>
         {/* Camera Section */}
         <View style={styles.cameraSection}>
-          {mediaUrl ? (
-            <TouchableOpacity
-              style={styles.photoPreview}
-              onPress={handleCapture}
-              activeOpacity={0.8}
-            >
+          {mediaUrl && isVerificationUnlocked ? (
+            <TouchableOpacity style={styles.photoPreview} onPress={handleCapture} activeOpacity={0.8}>
               <View style={styles.photoPreviewContent}>
-                <Image 
-                  source={{ uri: mediaUrl }} 
-                  style={[styles.photoThumbnail, { aspectRatio: photoRatio }]} 
+                <Image
+                  source={{ uri: mediaUrl }}
+                  style={[styles.photoThumbnail, { aspectRatio: photoRatio || 1 }]}
+                  resizeMode="cover"
                 />
                 <View style={styles.photoInfo}>
                   <CircleCheck size={16} color={COLORS.success} />
@@ -684,21 +848,28 @@ export default function Challenge() {
               </View>
               <View style={styles.deleteNoteRow}>
                 <Clock size={12} color={COLORS.textMuted} style={{ marginRight: 6 }} />
-                <Text style={styles.photoDeleteNote}>
-                  Auto-deletes after 24 hours
-                </Text>
+                <Text style={styles.photoDeleteNote}>Auto-deletes after 24 hours</Text>
               </View>
             </TouchableOpacity>
           ) : (
             <TouchableOpacity
-              style={styles.captureButton}
-              onPress={handleCapture}
-              disabled={isWeb}
-              activeOpacity={0.8}
+              style={[
+                styles.captureButton,
+                (!isVerificationUnlocked || isWeb) && styles.captureButtonLocked,
+              ]}
+              onPress={isVerificationUnlocked ? handleCapture : undefined}
+              disabled={!isVerificationUnlocked || isWeb}
+              activeOpacity={isVerificationUnlocked ? 0.8 : 1}
             >
-              <Camera size={24} color={COLORS.accent} />
-              <Text style={styles.captureText}>
-                {isWeb ? 'Camera unavailable on web' : 'Take Photo Proof'}
+              {isVerificationUnlocked ? (
+                <Camera size={24} color={COLORS.accent} />
+              ) : (
+                <Lock size={24} color={COLORS.textMuted} />
+              )}
+              <Text style={[styles.captureText, !isVerificationUnlocked && { color: COLORS.textMuted }]}>
+                {isWeb ? 'Camera unavailable on web' :
+                  !isVerificationUnlocked ? `Locked — ${remainingSeconds}s remaining` :
+                    'Take Photo Proof'}
               </Text>
             </TouchableOpacity>
           )}
@@ -708,30 +879,36 @@ export default function Challenge() {
         <TouchableOpacity
           style={[
             styles.submitButton,
-            (!mediaUrl || stayTimer < STAY_DURATION || submitting) && styles.submitButtonDisabled
+            (!mediaUrl || !isVerificationUnlocked || submitting || isRegionLocked) && styles.submitButtonDisabled
           ]}
           onPress={handleSubmit}
-          disabled={!mediaUrl || stayTimer < STAY_DURATION || submitting}
+          disabled={!mediaUrl || !isVerificationUnlocked || submitting || isRegionLocked}
           activeOpacity={0.8}
         >
           {submitting ? (
             <ActivityIndicator color={COLORS.textPrimary} />
           ) : (
             <View style={styles.submitRow}>
-              <CircleCheck size={18} color={COLORS.textPrimary} style={{ marginRight: 8 }} />
+              {isVerificationUnlocked && mediaUrl ? (
+                <CircleCheck size={18} color={COLORS.textPrimary} style={{ marginRight: 8 }} />
+              ) : (
+                <Lock size={18} color={COLORS.textPrimary} style={{ marginRight: 8 }} />
+              )}
               <Text style={styles.submitButtonText}>
-                {stayTimer < STAY_DURATION
-                  ? `Wait ${STAY_DURATION - stayTimer}s`
-                  : mediaUrl
-                    ? 'Submit Challenge'
-                    : 'Take photo first'}
+                {!isVerificationUnlocked
+                  ? `Locked — ${remainingSeconds}s`
+                  : !mediaUrl
+                    ? 'Take photo first'
+                    : isRegionLocked
+                      ? 'Outside Manipal'
+                      : 'Submit Challenge'}
               </Text>
             </View>
           )}
         </TouchableOpacity>
 
         {/* Share Button */}
-        {mediaUrl && (sessionState === 'completed' || stayTimer >= STAY_DURATION) && (
+        {mediaUrl && isVerificationUnlocked && (
           <TouchableOpacity
             style={styles.shareButton}
             onPress={handleShare}
@@ -750,7 +927,7 @@ export default function Challenge() {
             ref={watermarkRef} 
             style={[
               styles.watermarkCapture,
-              { aspectRatio: imageSize.width ? imageSize.width / imageSize.height : 1 }
+              { aspectRatio: (imageSize && imageSize.width > 0) ? imageSize.width / imageSize.height : 1 }
             ]}
           >
             <Image source={{ uri: mediaUrl }} style={styles.watermarkImage} />
@@ -1097,6 +1274,10 @@ const styles = StyleSheet.create({
     fontSize: FONT.md,
     fontWeight: FONT.bold,
     color: COLORS.accent,
+  },
+  captureButtonLocked: {
+    borderColor: COLORS.border,
+    opacity: 0.6,
   },
   submitButton: {
     backgroundColor: COLORS.accent,

@@ -1,9 +1,10 @@
 import { db, increment, serverTimestamp } from './db';
-import { doc, setDoc, getDoc, updateDoc } from 'firebase/firestore';
+import { doc, setDoc, getDoc, updateDoc, query, collection, where, getDocs } from 'firebase/firestore';
 import { uploadImage } from './storage';
-import { calculateScore, calculateTrustDelta } from '../utils/scoring';
+import { calculateScore, calculateTrustDelta, calculateMissedDayPenalty, getTimeWindow } from '../utils/scoring';
 import { getDistance } from '../utils/location';
-import { TIME_CONFIG, TRUST_CONFIG } from '../constants/config';
+import { TRUST_CONFIG, STAY_DURATION, SESSION_STATES } from '../constants/config';
+import { markSubmitted } from './session';
 
 /**
  * Check if user has already submitted today.
@@ -26,30 +27,91 @@ export const getTodaySubmission = async (userId) => {
 };
 
 /**
- * Submit a completed challenge.
- * Uploads image, verifies location, calculates score, updates user stats.
+ * Determine days missed since last submission.
  */
-export const submitChallenge = async (userId, challenge, localImageUri, userLocation) => {
+const getDaysMissed = (user) => {
+  if (!user.lastSubmissionDate) return -1;
+  let lastDate;
+  if (user.lastSubmissionDate?.toDate) { lastDate = user.lastSubmissionDate.toDate(); }
+  else if (user.lastSubmissionDate?.seconds) { lastDate = new Date(user.lastSubmissionDate.seconds * 1000); }
+  else { lastDate = new Date(user.lastSubmissionDate); }
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  lastDate.setHours(0, 0, 0, 0);
+
+  const diffDays = Math.round((today.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24));
+  return Math.max(0, diffDays - 1);
+};
+
+/**
+ * Check how many of the missed days were 'region_locked'.
+ * If a day has no challenge doc but user's regionStatus was 'outside', it's also excused.
+ */
+const getExcusedDaysCount = async (userId, lastSubmissionDate) => {
+  try {
+    const q = query(
+      collection(db, 'challenges'),
+      where('userId', '==', userId),
+      where('status', '==', 'region_locked'),
+      where('createdAt', '>', lastSubmissionDate.getTime())
+    );
+    const snap = await getDocs(q);
+    return snap.size;
+  } catch (e) {
+    console.error('[Submission] getExcusedDaysCount error:', e);
+    return 0;
+  }
+};
+
+/**
+ * Submit a completed challenge.
+ * Validates time window, location, prevents duplicates.
+ * Applies missed-day penalty ONLY if user is inside region.
+ *
+ * @param {string} userId
+ * @param {object} challenge - challenge document
+ * @param {string|null} localImageUri - local URI of captured image
+ * @param {object} userLocation - { latitude, longitude }
+ * @param {string} sessionState - current SESSION_STATES value (from UI)
+ * @param {boolean} isInsideRegion - whether user is inside Manipal
+ * @returns {object} submission result with score breakdown
+ */
+export const submitChallenge = async (
+  userId,
+  challenge,
+  localImageUri,
+  userLocation,
+  sessionState,
+  isInsideRegion = true
+) => {
+  const today = new Date().toDateString();
   const subRef = doc(db, 'submissions', `${userId}_${challenge.date}`);
   const userRef = doc(db, 'users', userId);
 
-  // Prevent duplicate submissions
+  // Guard: duplicate submission
   const existing = await getDoc(subRef);
-  if (existing.exists()) {
-    throw new Error('Already submitted today');
+  if (existing.exists()) throw new Error('Already submitted today.');
+
+  // Guard: session must be VERIFICATION_UNLOCKED
+  if (sessionState !== SESSION_STATES.VERIFICATION_UNLOCKED) {
+    throw new Error('Verification not yet unlocked. Complete the timer first.');
   }
 
-  // Time validation
+  // Guard: region lock — outside region cannot submit
+  if (!isInsideRegion) {
+    throw new Error('Progression is paused until you return to Manipal.');
+  }
+
+  // Time window validation (device clock for quick guard, server timestamp is source of truth)
   const now = new Date();
   const currentMinutes = now.getHours() * 60 + now.getMinutes();
-  const didInTime = currentMinutes >= TIME_CONFIG.actionStart && currentMinutes <= TIME_CONFIG.actionEnd;
-  const submittedInTime = currentMinutes <= TIME_CONFIG.submitEnd;
-
-  if (!submittedInTime) {
-    throw new Error('Submission window closed for today');
+  const timeWindow = getTimeWindow(currentMinutes);
+  if (!timeWindow) {
+    throw new Error('Submission window is closed. Submit between 5–7:30am or 6–9pm.');
   }
 
-  // Anti-cheat: calculate distance
+  // Anti-cheat: location distance
   let distance = 9999;
   if (userLocation && challenge.latitude && challenge.longitude) {
     distance = getDistance(
@@ -59,39 +121,43 @@ export const submitChallenge = async (userId, challenge, localImageUri, userLoca
       challenge.longitude
     );
   }
-
-  if (distance > 100) { // Still allow submission up to 100m but with 0 score
-    throw new Error('You are too far from the destination to submit.');
+  if (distance > 200) {
+    throw new Error('You are too far from the challenge location to submit.');
   }
 
-  // Upload image to Firebase Storage (not just local URI)
+  // Upload proof image
   let mediaUrl = null;
   if (localImageUri) {
     mediaUrl = await uploadImage(localImageUri, userId);
   }
 
-  // Fetch user data for streak check
+  // Fetch user data
   const userSnap = await getDoc(userRef);
   const user = userSnap.exists() ? userSnap.data() : {};
 
-  // Calculate score breakdown
+  // Determine if session had mocked GPS
+  const sessionSnap = await getDoc(doc(db, 'sessions', `${userId}_${today}`));
+  const sessionData = sessionSnap.exists() ? sessionSnap.data() : {};
+  const isSuspicious = sessionData.isMocked || false;
+
+  // Calculate score
   const breakdown = calculateScore({
     distance,
-    stayTime: challenge.stayTime || 120, // Should be passed from UI
-    targetStayTime: 120,
+    stayTime: challenge.stayTime || STAY_DURATION,
+    targetStayTime: STAY_DURATION,
     hasMedia: !!mediaUrl,
     streakCount: user.streakCount || 0,
-    isCleanSession: true, // Default to true for now
+    isCleanSession: !isSuspicious,
+    timeWindow,
   });
 
   const { score } = breakdown;
-
   const status =
     score >= 80 ? 'approved' :
-    score >= 60 ? 'flagged' :
+    score >= 55 ? 'flagged' :
     'rejected';
 
-  // Save submission with breakdown
+  // Persist submission (server timestamp for audit trail)
   await setDoc(subRef, {
     userId,
     challengeId: challenge.date,
@@ -99,57 +165,93 @@ export const submitChallenge = async (userId, challenge, localImageUri, userLoca
     mediaUrl,
     ...breakdown,
     status,
+    timeWindow,
+    isInsideRegion,
+    isSuspicious,
     createdAt: serverTimestamp(),
     timestamp: Date.now(),
     clientTime: now.toISOString(),
   });
 
-  // Update user stats
-  const startOfToday = new Date();
-  startOfToday.setHours(0, 0, 0, 0);
+  // ─── Update user stats ────────────────────────────────────────────────────
+  const daysMissed = getDaysMissed(user);
+  
+  let lastSubDateObj = null;
+  if (user.lastSubmissionDate) {
+    lastSubDateObj = user.lastSubmissionDate?.toDate ? user.lastSubmissionDate.toDate() : 
+                     (user.lastSubmissionDate?.seconds ? new Date(user.lastSubmissionDate.seconds * 1000) : new Date(user.lastSubmissionDate));
+  }
 
+  // Region-aware missed days: subtract excused days (region_locked) from daysMissed
+  let excusedDays = 0;
+  if (daysMissed > 0 && lastSubDateObj) {
+    excusedDays = await getExcusedDaysCount(userId, lastSubDateObj);
+  }
+  
+  const penalizedMissedDays = Math.max(0, daysMissed - excusedDays);
+
+  // Streak logic: freeze streak if days were excused
   let newStreakCount = 1;
   let streakUpdate = 1;
 
-  if (user.lastSubmissionDate) {
-    let lastDate;
-    if (user.lastSubmissionDate?.toDate) {
-      lastDate = user.lastSubmissionDate.toDate();
-    } else if (typeof user.lastSubmissionDate === 'number' || typeof user.lastSubmissionDate === 'string') {
-      lastDate = new Date(user.lastSubmissionDate);
-    } else if (user.lastSubmissionDate?.seconds) {
-      lastDate = new Date(user.lastSubmissionDate.seconds * 1000);
-    }
-
-    if (lastDate) {
-      lastDate.setHours(0, 0, 0, 0);
-      const diffMs = startOfToday.getTime() - lastDate.getTime();
-      const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
-
-      if (diffDays === 1) {
-        newStreakCount = (user.streakCount || 0) + 1;
-        streakUpdate = increment(1);
-      } else if (diffDays === 0) {
-        newStreakCount = user.streakCount || 0;
-        streakUpdate = increment(0);
-      }
-    }
+  if (!user.lastSubmissionDate) {
+    newStreakCount = 1;
+    streakUpdate = 1;
+  } else if (penalizedMissedDays === 0) {
+    // Gap was only excused days (or no gap at all) -> continue streak
+    newStreakCount = (user.streakCount || 0) + 1;
+    streakUpdate = increment(1);
+  } else {
+    // There was at least one unexcused missed day -> reset streak
+    newStreakCount = 1;
+    streakUpdate = 1;
   }
 
-  const trustDelta = calculateTrustDelta(score, newStreakCount, false);
-  const newTrustScore = Math.max(0, Math.min(100, (user.trustScore || 50) + trustDelta));
+  // Trust delta for this submission
+  const trustDelta = calculateTrustDelta(score, newStreakCount, timeWindow, isSuspicious);
+
+  // Missed-day penalty (ONLY if they were unexcused)
+  let penaltyDelta = 0;
+  if (penalizedMissedDays >= 1) {
+    penaltyDelta = calculateMissedDayPenalty(penalizedMissedDays);
+    console.log(`[Submission] ${penalizedMissedDays} unexcused missed day(s), penalty: ${penaltyDelta}`);
+  }
+
+  const currentTrust = user.trustScore ?? TRUST_CONFIG.initial;
+  const newTrustScore = Math.max(
+    TRUST_CONFIG.min,
+    Math.min(TRUST_CONFIG.max, currentTrust + trustDelta + penaltyDelta)
+  );
 
   await updateDoc(userRef, {
     totalCompletions: increment(1),
     streakCount: streakUpdate,
     lastSubmissionDate: serverTimestamp(),
     trustScore: newTrustScore,
+    lastTrustDelta: parseFloat((trustDelta + penaltyDelta).toFixed(2)),
   });
 
   // Update challenge status
-  await setDoc(doc(db, 'challenges', `${userId}_${challenge.date}`), {
-    status: 'completed',
-  }, { merge: true });
+  await setDoc(
+    doc(db, 'challenges', `${userId}_${challenge.date}`),
+    { status: 'completed' },
+    { merge: true }
+  );
 
-  return { ...breakdown, status, mediaUrl };
+  // Mark session submitted in Firestore
+  try {
+    await markSubmitted(userId, challenge.date);
+  } catch (e) {
+    console.warn('[Submission] markSubmitted failed silently:', e);
+  }
+
+  return {
+    ...breakdown,
+    status,
+    mediaUrl,
+    trustDelta,
+    penaltyDelta,
+    newTrustScore,
+    timeWindow,
+  };
 };
