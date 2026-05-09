@@ -35,20 +35,12 @@ exports.onSubmissionCreate = onDocumentCreated(
 
     const user = userSnap.data();
 
-    // Trust update based on submission status
-    let trustDelta = 0;
-    if (data.status === "approved") trustDelta = 2;
-    else if (data.status === "flagged") trustDelta = -1;
-    else if (data.status === "rejected") trustDelta = -3;
-
-    const newTrust = Math.max(0, Math.min(100, (user.trustScore || 50) + trustDelta));
-
     // Check and award badges
     const updatedUser = {
       ...user,
-      trustScore: newTrust,
-      streakCount: user.streakCount || 0,
-      totalCompletions: user.totalCompletions || 0,
+      trustScore: user.trustScore ?? 0,
+      streakCount: user.streakCount ?? 0,
+      totalCompletions: user.totalCompletions ?? 0,
     };
 
     let badges = user.badges || [];
@@ -59,9 +51,8 @@ exports.onSubmissionCreate = onDocumentCreated(
       }
     }
 
-    // Update user
+    // Update user badges
     await userRef.update({
-      trustScore: newTrust,
       badges,
     });
 
@@ -71,7 +62,7 @@ exports.onSubmissionCreate = onDocumentCreated(
       serverValidated: true,
     });
 
-    console.log("Processed submission:", ref.id, "Status:", data.status, "Trust:", newTrust);
+    console.log("Processed submission:", ref.id, "Status:", data.status);
   }
 );
 

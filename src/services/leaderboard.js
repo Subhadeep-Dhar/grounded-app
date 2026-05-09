@@ -9,14 +9,14 @@ export const getLeaderboard = async () => {
   // 🔥 custom ranking formula
   return users.sort((a, b) => {
     const scoreA =
-      (a.totalCompletions || 0) * 2 +
-      (a.streakCount || 0) * 3 +
-      (a.trustScore || 0);
+      (a.totalCompletions ?? 0) * 2 +
+      (a.streakCount ?? 0) * 3 +
+      (a.trustScore ?? 0);
 
     const scoreB =
-      (b.totalCompletions || 0) * 2 +
-      (b.streakCount || 0) * 3 +
-      (b.trustScore || 0);
+      (b.totalCompletions ?? 0) * 2 +
+      (b.streakCount ?? 0) * 3 +
+      (b.trustScore ?? 0);
 
     return scoreB - scoreA;
   });

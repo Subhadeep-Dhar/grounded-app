@@ -1,5 +1,6 @@
 import { db } from '../lib/firebase';
 import { doc, setDoc, getDoc, increment, serverTimestamp } from 'firebase/firestore';
+import { reconcileUserTrust } from './reconciliation';
 
 export const createUserDoc = async (user) => {
     if (!user) return;
@@ -33,7 +34,9 @@ export const createUserDoc = async (user) => {
 export const getUserDoc = async (uid) => {
     const ref = doc(db, 'users', uid);
     const snap = await getDoc(ref);
-    return snap.exists() ? snap.data() : null;
+    if (!snap.exists()) return null;
+    const userData = snap.data();
+    return await reconcileUserTrust(uid, userData);
 };
 
 export { db, increment, serverTimestamp };

@@ -46,7 +46,7 @@ import { getUserDoc } from '../../src/services/db';
 import { getTodayChallenge } from '../../src/services/challenge';
 import { hasUserSubmittedToday } from '../../src/services/submission';
 import { getRandomQuote } from '../../src/constants/messages';
-import { BADGES, TRUST_CONFIG } from '../../src/constants/config';
+import { BADGES, TRUST_CONFIG, STREAK_CONFIG } from '../../src/constants/config';
 import { COLORS, FONT, SPACING, RADIUS, SHADOW } from '../../src/constants/theme';
 
 export default function Home() {
@@ -229,7 +229,7 @@ export default function Home() {
 
         <View style={styles.statCard}>
           <Star size={24} color="#FFD700" style={{ marginBottom: 8 }} />
-          <Text style={styles.statValue}>{userData?.trustScore || 50}</Text>
+          <Text style={styles.statValue}>{userData?.trustScore ?? 0}</Text>
           <Text style={styles.statLabel}>Trust Score</Text>
         </View>
 
@@ -250,14 +250,14 @@ export default function Home() {
           <View
             style={[
               styles.trustBarFill,
-              { width: `${Math.min(userData?.trustScore || 0, 100)}%` }
+              { width: `${Math.min(userData?.trustScore ?? 0, 100)}%` }
             ]}
           />
         </View>
         <Text style={styles.trustHint}>
-          {(userData?.trustScore || 0) >= TRUST_CONFIG.rewardThreshold
+          {(userData?.trustScore ?? 0) >= TRUST_CONFIG.rewardThreshold
             ? 'Excellent standing!'
-            : (userData?.trustScore || 0) >= 40
+            : (userData?.trustScore ?? 0) >= 40
               ? 'Good progress — keep showing up.'
               : 'Show up daily to build trust.'}
         </Text>
@@ -270,14 +270,14 @@ export default function Home() {
               <Zap size={14} color={COLORS.accent} />
               <View>
                 <Text style={styles.breakdownLabel}>Score ≥ 70</Text>
-                <Text style={styles.breakdownValue}>+score × 0.1</Text>
+                <Text style={styles.breakdownValue}>+2 to +5 (by tier)</Text>
               </View>
             </View>
             <View style={styles.breakdownItem}>
               <ThumbsUp size={14} color={COLORS.accent} />
               <View>
                 <Text style={styles.breakdownLabel}>Score 40-69</Text>
-                <Text style={styles.breakdownValue}>+score × 0.05</Text>
+                <Text style={styles.breakdownValue}>+1 to +2.5 (by tier)</Text>
               </View>
             </View>
           </View>
@@ -286,14 +286,14 @@ export default function Home() {
               <TriangleAlert size={14} color={COLORS.error} />
               <View>
                 <Text style={styles.breakdownLabel}>Score &lt; 40</Text>
-                <Text style={styles.breakdownValue}>-5 Points</Text>
+                <Text style={styles.breakdownValue}>{TRUST_CONFIG.lowScorePenalty} Points</Text>
               </View>
             </View>
             <View style={styles.breakdownItem}>
               <Flame size={14} color={COLORS.accent} />
               <View>
-                <Text style={styles.breakdownLabel}>Streak ≥ 3</Text>
-                <Text style={styles.breakdownValue}>+2 Bonus</Text>
+                <Text style={styles.breakdownLabel}>Streak ≥ {STREAK_CONFIG.minForBonus}</Text>
+                <Text style={styles.breakdownValue}>+{STREAK_CONFIG.bonusPerDay} Bonus</Text>
               </View>
             </View>
           </View>

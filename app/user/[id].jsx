@@ -136,7 +136,7 @@ export default function PublicProfile() {
           
           <View style={styles.nameRow}>
             <Text style={styles.username}>{userData?.username || 'Grounded User'}</Text>
-            {(userData?.trustScore || 0) >= 90 && (
+            {(userData?.trustScore ?? 0) >= 90 && (
               <ShieldCheck size={18} color={COLORS.accent} style={{ marginLeft: 6 }} />
             )}
           </View>
@@ -165,7 +165,7 @@ export default function PublicProfile() {
 
           <View style={styles.statCard}>
             <Star size={24} color="#FFD700" style={{ marginBottom: 8 }} />
-            <Text style={styles.statValue}>{userData?.trustScore || 50}</Text>
+            <Text style={styles.statValue}>{userData?.trustScore ?? 0}</Text>
             <Text style={styles.statLabel}>Trust</Text>
           </View>
         </View>

@@ -91,24 +91,29 @@ export const calculateScore = ({
  * Calculate trust score delta for a completed session.
  * Late window submissions get trustMultiplier applied.
  * @param {number} score - session score (0–100)
+ * @param {number} currentTrust - current trust score
  * @param {number} streakCount - current streak
  * @param {'primary'|'late'} timeWindow
  * @param {boolean} isSuspicious - mocked GPS or other flag
  * @returns {number} delta to apply to trust score
  */
-export const calculateTrustDelta = (score, streakCount, timeWindow = 'primary', isSuspicious = false) => {
-  const { onTimeDelta, lowScorePenalty } = TRUST_CONFIG;
+export const calculateTrustDelta = (score, currentTrust, streakCount, timeWindow = 'primary', isSuspicious = false) => {
+  const { progressionTiers, lowScorePenalty } = TRUST_CONFIG;
   const windowCfg = TIME_WINDOWS[timeWindow];
   const trustMult = windowCfg ? windowCfg.trustMultiplier : 1.0;
+
+  // Find tier delta
+  const tier = progressionTiers.find(t => currentTrust >= t.threshold) || progressionTiers[progressionTiers.length - 1];
+  const onTimeDelta = tier.delta;
 
   let delta = 0;
 
   if (score >= 70) {
-    delta = onTimeDelta * trustMult;         // primary: +8, late: +4
+    delta = onTimeDelta * trustMult;
   } else if (score >= 40) {
-    delta = (onTimeDelta / 2) * trustMult;  // primary: +4, late: +2
+    delta = (onTimeDelta / 2) * trustMult;
   } else {
-    delta = lowScorePenalty;                // -3, no multiplier
+    delta = lowScorePenalty;                // no multiplier
   }
 
   // Streak consistency bonus (also reduced in late window)

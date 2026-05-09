@@ -48,13 +48,14 @@ const getDaysMissed = (user) => {
  * Check how many of the missed days were 'region_locked'.
  * If a day has no challenge doc but user's regionStatus was 'outside', it's also excused.
  */
-const getExcusedDaysCount = async (userId, lastSubmissionDate) => {
+export const getExcusedDaysCount = async (userId, lastDateOrMs) => {
   try {
+    const timeMs = lastDateOrMs instanceof Date ? lastDateOrMs.getTime() : lastDateOrMs;
     const q = query(
       collection(db, 'challenges'),
       where('userId', '==', userId),
       where('status', '==', 'region_locked'),
-      where('createdAt', '>', lastSubmissionDate.getTime())
+      where('createdAt', '>', timeMs)
     );
     const snap = await getDocs(q);
     return snap.size;
@@ -207,8 +208,10 @@ export const submitChallenge = async (
     streakUpdate = 1;
   }
 
+  const currentTrust = user.trustScore ?? TRUST_CONFIG.initial;
+
   // Trust delta for this submission
-  const trustDelta = calculateTrustDelta(score, newStreakCount, timeWindow, isSuspicious);
+  const trustDelta = calculateTrustDelta(score, currentTrust, newStreakCount, timeWindow, isSuspicious);
 
   // Missed-day penalty (ONLY if they were unexcused)
   let penaltyDelta = 0;
@@ -216,8 +219,6 @@ export const submitChallenge = async (
     penaltyDelta = calculateMissedDayPenalty(penalizedMissedDays);
     console.log(`[Submission] ${penalizedMissedDays} unexcused missed day(s), penalty: ${penaltyDelta}`);
   }
-
-  const currentTrust = user.trustScore ?? TRUST_CONFIG.initial;
   const newTrustScore = Math.max(
     TRUST_CONFIG.min,
     Math.min(TRUST_CONFIG.max, currentTrust + trustDelta + penaltyDelta)

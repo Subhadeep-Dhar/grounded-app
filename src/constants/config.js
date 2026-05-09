@@ -69,8 +69,13 @@ export const TRUST_CONFIG = {
   rewardThreshold: 60,   // threshold for "Trusted" status
   max: 100,
   min: 0,
-  // Primary window perfect day (+8). 60/8 = ~7.5 days minimum, realistically 10-12
-  onTimeDelta: 8,
+  // Diminishing progression tiers (base gain for perfect primary-window submission)
+  progressionTiers: [
+    { threshold: 60, delta: 2 }, // 60-100: +2
+    { threshold: 40, delta: 3 }, // 40-59: +3
+    { threshold: 20, delta: 4 }, // 20-39: +4
+    { threshold: 0, delta: 5 }   // 0-19: +5
+  ],
   // Low-score penalty per submission
   lowScorePenalty: -3,
   // Missed-day penalty (only inside region)
@@ -82,7 +87,7 @@ export const TRUST_CONFIG = {
 // ─── Streak Config ────────────────────────────────────────────────────────────
 export const STREAK_CONFIG = {
   minForBonus: 3,  // minimum streak to earn trust bonus
-  bonusPerDay: 2,  // additional trust per streak day (after multiplier)
+  bonusPerDay: 1,  // additional trust per streak day (after multiplier)
 };
 
 // ─── Region Config (MIT Manipal campus geofence) ─────────────────────────────
