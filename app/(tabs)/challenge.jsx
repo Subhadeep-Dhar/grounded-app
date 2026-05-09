@@ -101,6 +101,7 @@ export default function Challenge() {
   const [regionStatus, setRegionStatus] = useState('unknown'); // 'inside'|'outside'|'unknown'
   const [timeWindow, setTimeWindow] = useState(null); // 'primary'|'late'|null
   const [isExpired, setIsExpired] = useState(false);
+  const [isWatermarkImageLoaded, setIsWatermarkImageLoaded] = useState(false);
 
   const watchSub = useRef(null);
   const stayInterval = useRef(null);
@@ -409,6 +410,7 @@ export default function Challenge() {
         Image.getSize(uri, (w, h) => {
           setPhotoRatio(w / h);
           setImageSize({ width: w, height: h });
+          setIsWatermarkImageLoaded(false); // Reset for new capture
         }, (err) => {
           console.warn('Failed to get capture image size', err);
           setPhotoRatio(1);
@@ -466,12 +468,39 @@ export default function Challenge() {
         return;
       }
 
-      // Watermark capture
+      // Watermark capture with safeguards
       let finalMediaUri = mediaUrl;
       try {
-        finalMediaUri = await captureRef(watermarkRef, { format: 'jpg', quality: 0.7 });
+        // 1. Wait for Image component inside watermarkRef to load
+        // 2. Add safety delay for native view hierarchy to sync
+        const maxWait = 3000;
+        const start = Date.now();
+        while (!isWatermarkImageLoaded && (Date.now() - start < maxWait)) {
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+        
+        // Final safety delay (especially for Android rendering)
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+        const capturedUri = await captureRef(watermarkRef, { 
+          format: 'jpg', 
+          quality: 0.8, // Slightly higher quality
+          result: 'tmpfile'
+        });
+
+        // 3. Validate generated file
+        if (capturedUri) {
+          const response = await fetch(capturedUri);
+          const blob = await response.blob();
+          
+          if (blob.size > 1000) { // Valid if > 1KB
+            finalMediaUri = capturedUri;
+          } else {
+            console.warn('[Challenge] Generated watermark is too small/empty, falling back');
+          }
+        }
       } catch (e) {
-        console.log('[Challenge] Watermark capture failed, using raw image:', e);
+        console.log('[Challenge] Watermark capture failed or invalid, using raw image:', e);
       }
 
       const result = await submitChallenge(
@@ -930,7 +959,11 @@ export default function Challenge() {
               { aspectRatio: (imageSize && imageSize.width > 0) ? imageSize.width / imageSize.height : 1 }
             ]}
           >
-            <Image source={{ uri: mediaUrl }} style={styles.watermarkImage} />
+            <Image 
+              source={{ uri: mediaUrl }} 
+              style={styles.watermarkImage} 
+              onLoad={() => setIsWatermarkImageLoaded(true)}
+            />
             <Image 
               source={require('../../assets/Grounded_logo_removed_background.png')} 
               style={styles.watermarkLogo} 
@@ -1409,15 +1442,16 @@ const styles = StyleSheet.create({
   // Watermark hidden view styles
   hiddenWatermarkContainer: {
     position: 'absolute',
-    left: -2000, // Hide off-screen
+    left: -width * 2, // Off-screen but not 'hidden' from renderer
     top: 0,
     width: width,
-    zIndex: -1,
+    zIndex: 1, // Positive zIndex to ensure it's in the rendering stack
+    opacity: 0.01, // Near invisible
   },
   watermarkCapture: {
     width: width,
-    height: width * 1.33, // 4:3 Aspect Ratio
-    backgroundColor: 'black',
+    height: width * 1.33,
+    backgroundColor: 'transparent', // Avoid black flash if capture starts early
     position: 'relative',
   },
   watermarkImage: {
