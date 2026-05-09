@@ -3,10 +3,10 @@ import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
 /**
  * Upload image to Firebase Storage.
- * Path: proofs/{userId}/{timestamp}.jpg
- * Matches storage rules: /proofs/{userId}/{fileName}
+ * Supports configurable folders to isolate ephemeral proofs from profile pics.
+ * Matches storage rules: /{folder}/{userId}/{fileName}
  */
-export const uploadImage = async (uri, userId) => {
+export const uploadImage = async (uri, userId, folder = 'proofs') => {
   if (!uri || !userId) {
     throw new Error('Invalid upload parameters: missing URI or User ID');
   }
@@ -19,7 +19,7 @@ export const uploadImage = async (uri, userId) => {
     blob = await response.blob();
 
     const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.jpg`;
-    const fileRef = ref(storage, `proofs/${userId}/${fileName}`);
+    const fileRef = ref(storage, `${folder}/${userId}/${fileName}`);
 
     const metadata = {
       contentType: 'image/jpeg',

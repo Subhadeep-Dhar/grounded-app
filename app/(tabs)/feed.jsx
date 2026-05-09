@@ -23,7 +23,8 @@ import {
   User,
   ShieldCheck,
   TriangleAlert,
-  CircleX
+  CircleX,
+  ImageOff
 } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { getFeed } from '../../src/services/feed';
@@ -33,6 +34,7 @@ const { width, height } = Dimensions.get('window');
 
 const DynamicImage = ({ uri, onPress }) => {
   const [aspectRatio, setAspectRatio] = useState(1);
+  const [hasError, setHasError] = useState(false);
 
   useEffect(() => {
     if (uri) {
@@ -51,14 +53,24 @@ const DynamicImage = ({ uri, onPress }) => {
       onPress={onPress}
       style={[styles.imageContainer, { aspectRatio: Math.min(Math.max(aspectRatio, 0.75), 1.75) }]}
     >
-      <Image
-        source={{ uri }}
-        style={styles.image}
-        resizeMode="cover"
-      />
-      <View style={styles.expandBadge}>
-        <Maximize2 size={16} color="white" />
-      </View>
+      {!hasError ? (
+        <>
+          <Image
+            source={{ uri }}
+            style={styles.image}
+            resizeMode="cover"
+            onError={() => setHasError(true)}
+          />
+          <View style={styles.expandBadge}>
+            <Maximize2 size={16} color="white" />
+          </View>
+        </>
+      ) : (
+        <View style={styles.errorPlaceholder}>
+          <ImageOff size={32} color={COLORS.textMuted} />
+          <Text style={styles.errorText}>Image expired or missing</Text>
+        </View>
+      )}
     </TouchableOpacity>
   );
 };
@@ -479,5 +491,21 @@ const styles = StyleSheet.create({
   expandedImage: {
     width: width,
     height: height * 0.8,
+  },
+  errorPlaceholder: {
+    flex: 1,
+    backgroundColor: COLORS.bgCard,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: SPACING.xl,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: RADIUS.lg,
+  },
+  errorText: {
+    color: COLORS.textMuted,
+    fontSize: FONT.xs,
+    marginTop: SPACING.sm,
+    fontWeight: FONT.medium,
   },
 });

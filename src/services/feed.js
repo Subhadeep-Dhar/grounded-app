@@ -1,17 +1,32 @@
 import { db } from '../lib/firebase';
 import { collection, getDocs, query, orderBy, limit, where, doc, getDoc } from 'firebase/firestore';
+import { STORAGE_CONFIG } from '../constants/config';
 
 export const getFeed = async () => {
-  const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000;
+  const now = Date.now();
   
+  // Efficient query using expiresAt (or fallback to timestamp age)
   const q = query(
     collection(db, 'submissions'),
-    where('timestamp', '>', oneDayAgo),
-    orderBy('timestamp', 'desc'),
+    where('expiresAt', '>', now),
+    orderBy('expiresAt', 'desc'),
     limit(20)
   );
 
-  const snap = await getDocs(q);
+  let snap = await getDocs(q);
+  
+  // Backward compatibility: If no expiresAt results, try legacy timestamp filtering
+  if (snap.empty) {
+    const legacyCutoff = now - STORAGE_CONFIG.feedExpirationMs;
+    const legacyQ = query(
+      collection(db, 'submissions'),
+      where('timestamp', '>', legacyCutoff),
+      orderBy('timestamp', 'desc'),
+      limit(20)
+    );
+    snap = await getDocs(legacyQ);
+  }
+
   const submissions = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
   // Fetch unique user data

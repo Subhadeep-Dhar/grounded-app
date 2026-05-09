@@ -122,3 +122,9 @@ export const BADGES = [
   { id: 'champion', name: 'Champion', desc: '30 completions', check: (u) => (u.totalCompletions || 0) >= 30 },
   { id: 'unstoppable', name: 'Unstoppable', desc: '14-day streak', check: (u) => (u.streakCount || 0) >= 14 },
 ];
+
+// ─── Storage Lifecycle Config ────────────────────────────────────────────────
+export const STORAGE_CONFIG = {
+  feedExpirationMs: 24 * 60 * 60 * 1000, // 24 hours retention for verification/feed posts
+  cleanupBatchLimit: 200,                // max documents deleted per scheduled run
+};

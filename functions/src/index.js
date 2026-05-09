@@ -107,48 +107,83 @@ exports.markMissedUsers = onSchedule(
 );
 
 // ─── Scheduled Job: Cleanup (Every 12 hours) ────
+// Safeguards storage costs and privacy by removing ephemeral verification content.
 exports.cleanupOldSubmissions = onSchedule(
   {
-    schedule: "0 */12 * * *", // Run every 12 hours
+    schedule: "0 */12 * * *", 
     timeZone: "Asia/Kolkata",
+    memory: "256MiB", // Lightweight
   },
   async () => {
-    const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000;
-    const subSnap = await db.collection("submissions")
-      .where("timestamp", "<", oneDayAgo)
+    const now = Date.now();
+    const RETENTION_MS = 24 * 60 * 60 * 1000;
+    const CLEANUP_LIMIT = 200;
+    
+    // 1. Fetch expired submissions using expiresAt (Primary) or legacy timestamp (Fallback)
+    let subSnap = await db.collection("submissions")
+      .where("expiresAt", "<", now)
+      .limit(CLEANUP_LIMIT)
       .get();
+      
+    if (subSnap.empty) {
+      const legacyCutoff = now - RETENTION_MS;
+      subSnap = await db.collection("submissions")
+        .where("timestamp", "<", legacyCutoff)
+        .limit(CLEANUP_LIMIT)
+        .get();
+    }
 
-    console.log(`Starting cleanup for ${subSnap.size} old submissions...`);
+    if (subSnap.empty) {
+      console.log("[Cleanup] No expired submissions found.");
+      return;
+    }
+
+    console.log(`[Cleanup] Found ${subSnap.size} expired candidates. Starting removal...`);
 
     const storage = admin.storage().bucket();
-    let deleteCount = 0;
+    let deletedCount = 0;
+    let skippedCount = 0;
+    let failedCount = 0;
 
     for (const doc of subSnap.docs) {
       const data = doc.data();
 
+      // Safeguard: Ensure we don't delete very recent/active uploads 
+      const age = now - (data.timestamp || 0);
+      if (age < 3600000 && !data.expiresAt) {
+        skippedCount++;
+        continue;
+      }
+
       try {
         // 1. Delete image from Storage if it exists
         if (data.mediaUrl) {
-          // Extract filename from URL (Firebase Storage format)
-          // Example: https://firebasestorage.googleapis.com/v0/b/[bucket]/o/submissions%2F[filename]?alt=media
           const urlParts = data.mediaUrl.split('/o/');
           if (urlParts.length > 1) {
             const filePathWithParams = urlParts[1].split('?')[0];
             const filePath = decodeURIComponent(filePathWithParams);
             
-            console.log(`Deleting storage file: ${filePath}`);
-            await storage.file(filePath).delete().catch(e => console.log("File already deleted or not found"));
+            // Safety check: ONLY delete from ephemeral folders (proofs/)
+            // Never touch profile/ or permanent/ assets
+            if (filePath.startsWith('proofs/')) {
+              await storage.file(filePath).delete().catch(e => {
+                if (e.code !== 404) console.warn(`[Cleanup] Storage skip for ${filePath}:`, e.message);
+              });
+            } else {
+              console.log(`[Cleanup] Safeguard: Skipping non-ephemeral path: ${filePath}`);
+            }
           }
         }
 
         // 2. Delete Firestore document
         await doc.ref.delete();
-        deleteCount++;
+        deletedCount++;
       } catch (error) {
-        console.error(`Error deleting submission ${doc.id}:`, error);
+        failedCount++;
+        console.error(`[Cleanup] Error processing ${doc.id}:`, error);
       }
     }
 
-    console.log(`Cleanup completed. ${deleteCount} submissions deleted.`);
+    console.log(`[Cleanup] Finished. Deleted: ${deletedCount}, Skipped: ${skippedCount}, Failed: ${failedCount}`);
   }
 );

@@ -3,7 +3,7 @@ import { doc, setDoc, getDoc, updateDoc, query, collection, where, getDocs } fro
 import { uploadImage } from './storage';
 import { calculateScore, calculateTrustDelta, calculateMissedDayPenalty, getTimeWindow } from '../utils/scoring';
 import { getDistance } from '../utils/location';
-import { TRUST_CONFIG, STAY_DURATION, SESSION_STATES } from '../constants/config';
+import { TRUST_CONFIG, STAY_DURATION, SESSION_STATES, STORAGE_CONFIG } from '../constants/config';
 import { markSubmitted } from './session';
 
 /**
@@ -171,6 +171,7 @@ export const submitChallenge = async (
     isSuspicious,
     createdAt: serverTimestamp(),
     timestamp: Date.now(),
+    expiresAt: Date.now() + STORAGE_CONFIG.feedExpirationMs,
     clientTime: now.toISOString(),
   });
 
