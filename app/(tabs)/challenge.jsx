@@ -108,7 +108,7 @@ export default function Challenge() {
   const stayInterval = useRef(null);
   const mapRef = useRef(null);
   const watermarkRef = useRef(null);
-  const sessionStateRef = useRef(sessionState);
+  const mountedRef = useRef(true);
 
   // Keep ref in sync
   useEffect(() => {
@@ -174,6 +174,18 @@ export default function Challenge() {
         } else if (state === SESSION_STATES.TRAVELING) {
           setSessionState(SESSION_STATES.TRAVELING);
         }
+
+        // Initialize user location and region status for active sessions
+        if ([SESSION_STATES.TRAVELING, SESSION_STATES.ARRIVED_WAITING, SESSION_STATES.VERIFICATION_UNLOCKED].includes(state)) {
+          const loc = await getCurrentLocation();
+          if (loc && loc.coords && mountedRef.current) {
+            const newLoc = { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
+            setUserLocation(newLoc);
+            const inside = isInsideRegion(newLoc.latitude, newLoc.longitude);
+            setIsRegionLocked(!inside);
+            setRegionStatus(inside ? 'inside' : 'outside');
+          }
+        }
       }
 
       const todayChallenge = await getTodayChallenge(user.uid);
@@ -194,6 +206,9 @@ export default function Challenge() {
 
   useEffect(() => {
     fetchChallenge();
+    return () => {
+      mountedRef.current = false;
+    };
   }, [fetchChallenge]);
 
   // Stay countdown — increments every second during ARRIVED_WAITING

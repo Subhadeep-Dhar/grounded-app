@@ -22,10 +22,6 @@ function TabIcon({ emoji, label, focused }) {
 export default function TabLayout() {
   const { user, loading } = useAuthStore();
 
-  if (!loading && !user) {
-    return <Redirect href="/(auth)/login" />;
-  }
-
   // Lightweight single-shot region check on launch
   useEffect(() => {
     if (!user) return;
@@ -62,6 +58,10 @@ export default function TabLayout() {
 
     return () => { isMounted = false; };
   }, [user]);
+
+  if (!loading && !user) {
+    return <Redirect href="/(auth)/login" />;
+  }
 
   return (
     <Tabs
