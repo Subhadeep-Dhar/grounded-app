@@ -15,6 +15,7 @@ import {
 import * as Sharing from 'expo-sharing';
 import { captureRef } from 'react-native-view-shot';
 import { useRouter } from 'expo-router';
+import * as Location from 'expo-location';
 import { useAuthStore } from '../../src/store/authStore';
 import { getTodayChallenge } from '../../src/services/challenge';
 import { getCurrentLocation, watchUserLocation } from '../../src/services/gps';
@@ -131,7 +132,14 @@ export default function Challenge() {
       const mins = getCurrentMinutes();
       const window = getTimeWindow(mins);
       setTimeWindow(window);
-      if (!window) setIsExpired(true);
+      
+      // 3. Prevent restoring expired sessions
+      if (!window) {
+        setIsExpired(true);
+        setSessionState(SESSION_STATES.EXPIRED);
+        setLoading(false);
+        return;
+      }
 
       // Restore persisted session from Firestore (prevent restart bypass)
       const today = new Date().toDateString();
@@ -218,15 +226,6 @@ export default function Challenge() {
     };
   }, [sessionState, countdownEndsAt, user]);
 
-  // Cleanup watch
-  useEffect(() => {
-    return () => {
-      if (watchSub.current) {
-        watchSub.current.remove();
-        watchSub.current = null;
-      }
-    };
-  }, []);
 
   const getDistanceText = (dist) => {
     if (dist === null) return '';
@@ -236,6 +235,131 @@ export default function Challenge() {
     if (dist < 1000) return `${Math.round(dist)}m away`;
     return `${(dist / 1000).toFixed(1)}km away`;
   };
+
+  const handleArrival = useCallback(async () => {
+    // Validate time window hasn't closed since session start
+    const nowMins = getCurrentMinutes();
+    if (!isSubmissionAllowed(nowMins)) {
+      setIsExpired(true);
+      setSessionState(SESSION_STATES.EXPIRED);
+      return;
+    }
+
+    try {
+      const today = new Date().toDateString();
+      const session = await markArrived(user.uid, today);
+      setCountdownEndsAt(session.countdownEndsAt);
+      setSessionState(SESSION_STATES.ARRIVED_WAITING);
+      setStayTimer(0);
+      sendArrivalNotification();
+    } catch (e) {
+      console.warn('[Challenge] handleArrival error:', e);
+      // Fallback: still transition UI
+      setSessionState(SESSION_STATES.ARRIVED_WAITING);
+      setCountdownEndsAt(Date.now() + STAY_DURATION * 1000);
+      setStayTimer(0);
+    }
+  }, [user]);
+
+  const startWatcher = useCallback(async () => {
+    try {
+      // 1. Duplicate watcher prevention: clear any existing watcher safely
+      if (watchSub.current) { 
+        watchSub.current.remove(); 
+        watchSub.current = null; 
+      }
+
+      // 2. Permission and service check during automatic watcher recovery
+      const { status } = await Location.getForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        throw new Error('Location permissions not granted');
+      }
+      const enabled = await Location.hasServicesEnabledAsync();
+      if (!enabled) {
+        throw new Error('Location services are disabled');
+      }
+
+      watchSub.current = await watchUserLocation((loc) => {
+        if (!loc || !loc.coords) return;
+        
+        const updatedLoc = {
+          latitude: loc.coords.latitude,
+          longitude: loc.coords.longitude,
+        };
+        setUserLocation(updatedLoc);
+
+        if (loc.mocked === true) {
+          logSuspicion(user.uid, new Date().toDateString(), 'MOCKED_GPS').catch(() => {});
+        }
+
+        const inside = isInsideRegion(updatedLoc.latitude, updatedLoc.longitude);
+        setIsRegionLocked(!inside);
+        setRegionStatus(inside ? 'inside' : 'outside');
+
+        if (challenge) {
+          const dist = getDistance(
+            updatedLoc.latitude, updatedLoc.longitude,
+            challenge.latitude, challenge.longitude
+          );
+          setDistance(dist);
+
+          const currentState = sessionStateRef.current;
+
+          if (dist <= challenge.radius && currentState === SESSION_STATES.TRAVELING && inside) {
+            const nowMins = getCurrentMinutes();
+            if (isSubmissionAllowed(nowMins)) {
+              handleArrival();
+            }
+          }
+
+          if (dist > challenge.radius && currentState === SESSION_STATES.ARRIVED_WAITING) {
+            const today = new Date().toDateString();
+            resetArrival(user.uid, today).catch(() => {});
+            setSessionState(SESSION_STATES.TRAVELING);
+            setStayTimer(0);
+            setCountdownEndsAt(null);
+            Alert.alert('Left the area', 'Timer reset. Return to the location to continue.');
+          }
+        }
+
+        if (mapRef.current) {
+          try {
+            mapRef.current.animateToRegion({ ...updatedLoc, latitudeDelta: 0.005, longitudeDelta: 0.005 }, 500);
+          } catch (e) {}
+        }
+      });
+    } catch (e) {
+      console.log('[Challenge] Watcher recovery error:', e);
+      setLocationError('Unable to track location. Please ensure GPS is enabled.');
+    }
+  }, [user, challenge, handleArrival]);
+
+  // Automatic watcher recovery and cleanup
+  useEffect(() => {
+    const activeStates = [SESSION_STATES.TRAVELING, SESSION_STATES.ARRIVED_WAITING, SESSION_STATES.VERIFICATION_UNLOCKED];
+    
+    if (activeStates.includes(sessionState) && challenge) {
+      if (!watchSub.current) {
+        startWatcher();
+      }
+    } else {
+      // Inactive states (SUBMITTED, EXPIRED, NOT_STARTED) or cleanup:
+      // Safely stop background watcher to save battery.
+      if (watchSub.current) {
+        watchSub.current.remove();
+        watchSub.current = null;
+      }
+    }
+
+    // Unmount cleanup
+    return () => {
+      if (watchSub.current) {
+        watchSub.current.remove();
+        watchSub.current = null;
+      }
+    };
+  }, [sessionState, challenge, startWatcher]);
+
 
   const startSession = async () => {
     setLocationError(null);
@@ -300,73 +424,6 @@ export default function Challenge() {
         setDistance(dist);
       }
 
-      // Start location watcher
-      const startWatcher = async () => {
-        try {
-          if (watchSub.current) { watchSub.current.remove(); watchSub.current = null; }
-
-          watchSub.current = await watchUserLocation((loc) => {
-            if (!loc || !loc.coords) return;
-
-            const updatedLoc = {
-              latitude: loc.coords.latitude,
-              longitude: loc.coords.longitude,
-            };
-            setUserLocation(updatedLoc);
-
-            // Mocked GPS detection (Expo exposes loc.mocked on Android)
-            if (loc.mocked === true) {
-              logSuspicion(user.uid, new Date().toDateString(), 'MOCKED_GPS').catch(() => {});
-            }
-
-            // Region re-evaluation on each GPS update (battery-efficient — no polling)
-            const inside = isInsideRegion(updatedLoc.latitude, updatedLoc.longitude);
-            setIsRegionLocked(!inside);
-            setRegionStatus(inside ? 'inside' : 'outside');
-
-            if (challenge) {
-              const dist = getDistance(
-                updatedLoc.latitude, updatedLoc.longitude,
-                challenge.latitude, challenge.longitude
-              );
-              setDistance(dist);
-
-              const currentState = sessionStateRef.current;
-
-              // Arrival detection: only trigger if time window open + inside region
-              if (dist <= challenge.radius && currentState === SESSION_STATES.TRAVELING && inside) {
-                const nowMins = getCurrentMinutes();
-                if (isSubmissionAllowed(nowMins)) {
-                  handleArrival();
-                }
-              }
-
-              // Anti-passive-wait: exit radius resets timer
-              if (dist > challenge.radius && currentState === SESSION_STATES.ARRIVED_WAITING) {
-                const today = new Date().toDateString();
-                resetArrival(user.uid, today).catch(() => {});
-                setSessionState(SESSION_STATES.TRAVELING);
-                setStayTimer(0);
-                setCountdownEndsAt(null);
-                Alert.alert('Left the area', 'Timer reset. Return to the location to continue.');
-              }
-            }
-
-            // Safe map animation
-            if (mapRef.current) {
-              try {
-                mapRef.current.animateToRegion(
-                  { ...updatedLoc, latitudeDelta: 0.005, longitudeDelta: 0.005 },
-                  500
-                );
-              } catch (e) {}
-            }
-          });
-        } catch (e) {
-          console.log('[Challenge] Watcher error:', e);
-        }
-      };
-
       setTimeout(startWatcher, 1200);
     } catch (error) {
       console.log('[Challenge] startSession error:', error);
@@ -377,30 +434,6 @@ export default function Challenge() {
     }
   };
 
-  const handleArrival = async () => {
-    // Validate time window hasn't closed since session start
-    const nowMins = getCurrentMinutes();
-    if (!isSubmissionAllowed(nowMins)) {
-      setIsExpired(true);
-      setSessionState(SESSION_STATES.EXPIRED);
-      return;
-    }
-
-    try {
-      const today = new Date().toDateString();
-      const session = await markArrived(user.uid, today);
-      setCountdownEndsAt(session.countdownEndsAt);
-      setSessionState(SESSION_STATES.ARRIVED_WAITING);
-      setStayTimer(0);
-      sendArrivalNotification();
-    } catch (e) {
-      console.warn('[Challenge] handleArrival error:', e);
-      // Fallback: still transition UI
-      setSessionState(SESSION_STATES.ARRIVED_WAITING);
-      setCountdownEndsAt(Date.now() + STAY_DURATION * 1000);
-      setStayTimer(0);
-    }
-  };
 
   const handleCapture = async () => {
     try {
