@@ -2,6 +2,12 @@ import { Tabs, Redirect } from 'expo-router';
 import { View, Text, StyleSheet, Platform } from 'react-native';
 import { useAuthStore } from '../../src/store/authStore';
 import { COLORS, FONT } from '../../src/constants/theme';
+import { useEffect } from 'react';
+import * as Location from 'expo-location';
+import { db } from '../../src/lib/firebase';
+import { doc, getDoc } from 'firebase/firestore';
+import { evaluateRegion } from '../../src/services/region';
+import { pauseNotifications, resumeNotifications } from '../../src/services/notifications';
 
 function TabIcon({ emoji, label, focused }) {
   return (
@@ -19,6 +25,43 @@ export default function TabLayout() {
   if (!loading && !user) {
     return <Redirect href="/(auth)/login" />;
   }
+
+  // Lightweight single-shot region check on launch
+  useEffect(() => {
+    if (!user) return;
+    let isMounted = true;
+
+    const checkRegionOnLaunch = async () => {
+      try {
+        // Handle location permission failures gracefully
+        const { status } = await Location.getForegroundPermissionsAsync();
+        if (status !== 'granted') return; // fail gracefully, avoid false freeze
+
+        // Balanced accuracy: fast enough without GPS jitter
+        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced, maximumAge: 60000 });
+        if (!isMounted) return;
+
+        const userDoc = await getDoc(doc(db, 'users', user.uid));
+        if (userDoc.exists()) {
+          const { newStatus, changed } = await evaluateRegion(user.uid, loc.coords.latitude, loc.coords.longitude, userDoc.data());
+          // Only trigger notification system if status changed to avoid redundant scheduling
+          if (changed) {
+            if (newStatus === 'inside') {
+              resumeNotifications().catch(() => {});
+            } else {
+              pauseNotifications().catch(() => {});
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('[Layout] Silent region check failed:', e);
+      }
+    };
+
+    checkRegionOnLaunch();
+
+    return () => { isMounted = false; };
+  }, [user]);
 
   return (
     <Tabs

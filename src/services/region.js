@@ -57,23 +57,64 @@ export const updateRegionStatus = async (userId, status) => {
 
 /**
  * Evaluate region status from coordinates and update Firestore if changed.
- * Returns true if inside region, false if outside.
- * Call this from GPS update handler — NOT on a timer (battery efficient).
+ * Handles Grace Period state machine to prevent GPS jitter from instantly freezing progression.
+ * Returns { isInside, changed, newStatus }
+ * 
  * @param {string} userId
  * @param {number} latitude
  * @param {number} longitude
- * @param {string} currentStatus - current cached status ('inside'|'outside'|'unknown')
- * @returns {{ isInside: boolean, changed: boolean, newStatus: string }}
+ * @param {object} userData - the full user document data (for currentStatus and lastExitTime)
  */
-export const evaluateRegion = async (userId, latitude, longitude, currentStatus) => {
+export const evaluateRegion = async (userId, latitude, longitude, userData = {}) => {
   const isInside = isInsideRegion(latitude, longitude);
-  const newStatus = isInside ? 'inside' : 'outside';
-  const changed = newStatus !== currentStatus;
+  const currentStatus = userData.regionStatus || 'inside';
+  const lastExitTime = userData.lastExitTime || null;
+  const { gracePeriodMs } = REGION_CONFIG;
 
-  if (changed && userId) {
-    // Fire-and-forget — don't block GPS callback
-    updateRegionStatus(userId, newStatus).catch(() => {});
+  let newStatus = currentStatus;
+  let newExitTime = lastExitTime;
+  let changed = false;
+
+  if (isInside) {
+    if (currentStatus === 'outside' || lastExitTime !== null) {
+      newStatus = 'inside';
+      newExitTime = null;
+      changed = true;
+      console.log('[Region] Returned inside region. Restoring state.');
+    }
+  } else {
+    // We are currently measured as Outside
+    if (currentStatus === 'inside') {
+      if (!lastExitTime) {
+        // First exit measurement: start the grace period
+        newExitTime = Date.now();
+        changed = true;
+        console.log('[Region] First exit detected. Starting grace period.');
+      } else if (Date.now() - lastExitTime > gracePeriodMs) {
+        // Grace period expired: transition fully to outside
+        newStatus = 'outside';
+        changed = true;
+        console.log('[Region] Grace period expired. Transitioning to OUTSIDE.');
+      }
+    }
   }
 
-  return { isInside, changed, newStatus };
+  // Handle stale-region-state protection (always update timestamp if check succeeds)
+  // We avoid high frequency writes by only writing if state changed OR if the last update was very old (e.g. > 1 day)
+  const lastUpdate = userData.regionStatusUpdatedAt || 0;
+  const isStale = Date.now() - lastUpdate > 24 * 60 * 60 * 1000;
+
+  if ((changed || isStale) && userId) {
+    try {
+      await updateDoc(doc(db, 'users', userId), {
+        regionStatus: newStatus,
+        lastExitTime: newExitTime,
+        regionStatusUpdatedAt: Date.now(),
+      });
+    } catch (e) {
+      console.warn('[Region] Error persisting state:', e);
+    }
+  }
+
+  return { isInside, changed: newStatus !== currentStatus, newStatus };
 };

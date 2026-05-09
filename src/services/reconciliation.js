@@ -55,7 +55,13 @@ export const reconcileUserTrust = async (userId, userDoc) => {
     }
 
     // 2. Validate Region Excuses
-    const excusedDays = await getExcusedDaysCount(userId, lastCheckedDate);
+    // If user's cached regionStatus is 'outside', assume they were traveling the entire time.
+    let excusedDays = await getExcusedDaysCount(userId, lastCheckedDate);
+    if (userDoc.regionStatus === 'outside') {
+      excusedDays = missedPastDays; // Fully excuse all missed days
+      console.log(`[Reconciliation] Progression frozen (outside region). Excusing ${missedPastDays} days.`);
+    }
+
     const penalizedMissedDays = Math.max(0, missedPastDays - excusedDays);
 
     const safeTime = Date.now();

@@ -8,26 +8,37 @@ export const getTodayChallenge = async (userId, userLatitude = null, userLongitu
   const today = new Date().toDateString();
   const ref = doc(db, 'challenges', `${userId}_${today}`);
 
-  // Return existing challenge if already assigned
-  const snap = await getDoc(ref);
-  if (snap.exists()) return snap.data();
+  const userDoc = await getDoc(doc(db, 'users', userId));
+  const regionStatus = userDoc.exists() ? userDoc.data().regionStatus : 'unknown';
 
-  // Region gate: if coordinates provided and outside Manipal, don't assign
-  if (userLatitude != null && userLongitude != null) {
-    const inside = isInsideRegion(userLatitude, userLongitude);
-    if (!inside) {
-      const lockDoc = {
-        userId,
-        date: today,
-        task: null,
-        location: null,
-        regionLocked: true,
-        status: 'region_locked',
-        createdAt: Date.now(),
-      };
-      await setDoc(ref, lockDoc);
-      return lockDoc;
+  // Return existing challenge if already assigned (with retro-lock protection)
+  const snap = await getDoc(ref);
+  if (snap.exists()) {
+    const data = snap.data();
+    if (data.status === 'pending' && regionStatus === 'outside') {
+      // User traveled outside after generation but before completion. Safely lock the challenge.
+      const lockedData = { ...data, regionLocked: true, status: 'region_locked' };
+      await setDoc(ref, { regionLocked: true, status: 'region_locked' }, { merge: true });
+      console.log('[Challenge] Retro-locked pending challenge for departed user.');
+      return lockedData;
     }
+    return data;
+  }
+
+  // Region gate: prevent assignment if regionStatus is outside
+  if (regionStatus === 'outside') {
+    const lockDoc = {
+      userId,
+      date: today,
+      task: null,
+      location: null,
+      regionLocked: true,
+      status: 'region_locked',
+      createdAt: Date.now(),
+    };
+    await setDoc(ref, lockDoc);
+    console.log('[Challenge] Assignment blocked — user is outside region.');
+    return lockDoc;
   }
 
   // Assign location via load-balanced system
