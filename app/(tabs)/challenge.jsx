@@ -109,6 +109,7 @@ export default function Challenge() {
   const mapRef = useRef(null);
   const watermarkRef = useRef(null);
   const mountedRef = useRef(true);
+  const sessionStateRef = useRef(sessionState);
 
   // Keep ref in sync
   useEffect(() => {
