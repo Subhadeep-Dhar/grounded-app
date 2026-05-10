@@ -2,7 +2,7 @@ import { db } from '../lib/firebase';
 import { doc, updateDoc } from 'firebase/firestore';
 import { calculateMissedDayPenalty } from '../utils/scoring';
 import { TRUST_CONFIG } from '../constants/config';
-import { getExcusedDaysCount } from './submission';
+import { getExcusedDaysCount } from './databaseUtils';
 
 /**
  * Lazy trust reconciliation.

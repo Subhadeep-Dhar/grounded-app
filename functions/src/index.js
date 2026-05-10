@@ -187,3 +187,70 @@ exports.cleanupOldSubmissions = onSchedule(
     console.log(`[Cleanup] Finished. Deleted: ${deletedCount}, Skipped: ${skippedCount}, Failed: ${failedCount}`);
   }
 );
+
+// ─── Scheduled Job: Daily Trust Reconciliation (2 AM IST) ────
+// Ensures inactive users' trust scores decay automatically
+exports.dailyTrustReconciliation = onSchedule(
+  {
+    schedule: "0 2 * * *", // 2 AM IST daily
+    timeZone: "Asia/Kolkata",
+    memory: "256MiB", // Lightweight
+  },
+  async () => {
+    const now = Date.now();
+    const RECONCILIATION_LIMIT = 100; // Process in batches to avoid timeouts
+    
+    console.log(`[Daily Reconciliation] Starting trust reconciliation at ${new Date(now).toISOString()}`);
+    
+    // Get users who haven't been active recently (no reconciliation in last 48 hours)
+    const cutoffTime = now - (48 * 60 * 60 * 1000);
+    const usersSnap = await db.collection("users")
+      .where("lastReconciliationDate", "<", cutoffTime)
+      .limit(RECONCILIATION_LIMIT)
+      .get();
+    
+    if (usersSnap.empty) {
+      console.log(`[Daily Reconciliation] No users need reconciliation.`);
+      return;
+    }
+    
+    console.log(`[Daily Reconciliation] Processing ${usersSnap.size} inactive users.`);
+    
+    let processedCount = 0;
+    let updatedCount = 0;
+    
+    for (const doc of usersSnap.docs) {
+      try {
+        const userData = doc.data();
+        
+        // Simple trust decay: reduce by 1 point per day inactive (max 5 points)
+        const lastReconciliation = userData.lastReconciliationDate || userData.createdAt || 0;
+        const daysSinceReconciliation = Math.floor((now - lastReconciliation) / (24 * 60 * 60 * 1000));
+        
+        if (daysSinceReconciliation > 0) {
+          const decayAmount = Math.min(daysSinceReconciliation, 5); // Cap at 5 points
+          const newTrustScore = Math.max(0, (userData.trustScore || 0) - decayAmount);
+          
+          await db.collection("users").doc(doc.id).update({
+            trustScore: newTrustScore,
+            lastReconciliationDate: now,
+          });
+          
+          updatedCount++;
+          console.log(`[Daily Reconciliation] Updated ${doc.id}: trust ${userData.trustScore} → ${newTrustScore}`);
+        } else {
+          // Just update the reconciliation timestamp
+          await db.collection("users").doc(doc.id).update({
+            lastReconciliationDate: now,
+          });
+        }
+        
+        processedCount++;
+      } catch (error) {
+        console.error(`[Daily Reconciliation] Error processing ${doc.id}:`, error);
+      }
+    }
+    
+    console.log(`[Daily Reconciliation] Completed. Processed: ${processedCount}, Updated: ${updatedCount}`);
+  }
+);

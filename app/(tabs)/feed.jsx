@@ -138,10 +138,6 @@ export default function Feed() {
   };
 
   const renderItem = ({ item }) => {
-    // Basic heuristic for aspect ratio if not provided by server
-    const isPortrait = true; // Most phone captures are portrait
-    const aspectRatio = isPortrait ? 9 / 16 : 16 / 9;
-
     return (
       <View style={styles.card}>
         <View style={styles.cardHeader}>

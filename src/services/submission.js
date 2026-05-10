@@ -5,6 +5,7 @@ import { calculateScore, calculateTrustDelta, calculateMissedDayPenalty, getTime
 import { getDistance } from '../utils/location';
 import { TRUST_CONFIG, STAY_DURATION, SESSION_STATES, STORAGE_CONFIG } from '../constants/config';
 import { markSubmitted } from './session';
+import { getExcusedDaysCount } from './databaseUtils';
 
 /**
  * Check if user has already submitted today.
@@ -42,27 +43,6 @@ const getDaysMissed = (user) => {
 
   const diffDays = Math.round((today.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24));
   return Math.max(0, diffDays - 1);
-};
-
-/**
- * Check how many of the missed days were 'region_locked'.
- * If a day has no challenge doc but user's regionStatus was 'outside', it's also excused.
- */
-export const getExcusedDaysCount = async (userId, lastDateOrMs) => {
-  try {
-    const timeMs = lastDateOrMs instanceof Date ? lastDateOrMs.getTime() : lastDateOrMs;
-    const q = query(
-      collection(db, 'challenges'),
-      where('userId', '==', userId),
-      where('status', '==', 'region_locked'),
-      where('createdAt', '>', timeMs)
-    );
-    const snap = await getDocs(q);
-    return snap.size;
-  } catch (e) {
-    console.error('[Submission] getExcusedDaysCount error:', e);
-    return 0;
-  }
 };
 
 /**
@@ -167,6 +147,7 @@ export const submitChallenge = async (
     ...breakdown,
     status,
     timeWindow,
+    didInTime: timeWindow === 'primary',
     isInsideRegion,
     isSuspicious,
     createdAt: serverTimestamp(),

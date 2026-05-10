@@ -103,6 +103,7 @@ export default function Challenge() {
   const [timeWindow, setTimeWindow] = useState(null); // 'primary'|'late'|null
   const [isExpired, setIsExpired] = useState(false);
   const [isWatermarkImageLoaded, setIsWatermarkImageLoaded] = useState(false);
+  const [isWatermarkLogoLoaded, setIsWatermarkLogoLoaded] = useState(false);
 
   const watchSub = useRef(null);
   const stayInterval = useRef(null);
@@ -460,6 +461,7 @@ export default function Challenge() {
           setPhotoRatio(w / h);
           setImageSize({ width: w, height: h });
           setIsWatermarkImageLoaded(false); // Reset for new capture
+          setIsWatermarkLogoLoaded(false); // Reset for new capture
         }, (err) => {
           console.warn('Failed to get capture image size', err);
           setPhotoRatio(1);
@@ -520,11 +522,11 @@ export default function Challenge() {
       // Watermark capture with safeguards
       let finalMediaUri = mediaUrl;
       try {
-        // 1. Wait for Image component inside watermarkRef to load
+        // 1. Wait for BOTH Image components inside watermarkRef to load
         // 2. Add safety delay for native view hierarchy to sync
         const maxWait = 3000;
         const start = Date.now();
-        while (!isWatermarkImageLoaded && (Date.now() - start < maxWait)) {
+        while ((!isWatermarkImageLoaded || !isWatermarkLogoLoaded) && (Date.now() - start < maxWait)) {
           await new Promise(resolve => setTimeout(resolve, 100));
         }
         
@@ -566,9 +568,19 @@ export default function Challenge() {
       setSessionState(SESSION_STATES.SUBMITTED);
 
       const windowLabel = result.timeWindow === 'late' ? ' (Evening window — reduced trust gain)' : '';
+      const streakBonus = result.streakBonus || 0;
+      const scoreBreakdown = 
+        `Score: ${result.score}/100\n` +
+        `• Location: ${result.locationScore || 0}pts\n` +
+        `• Stay Time: ${result.timeScore || 0}pts\n` +
+        `• Photo Proof: ${result.proofScore || 0}pts\n` +
+        `• Clean Session: ${result.integrityScore || 0}pts\n` +
+        `${streakBonus > 0 ? `• Streak Bonus: ${streakBonus}pts\n` : ''}` +
+        `Trust: ${result.newTrustScore?.toFixed(0) ?? '?'}${windowLabel}`;
+
       Alert.alert(
         '🎉 Challenge Complete!',
-        `Score: ${result.score} • Trust: ${result.newTrustScore?.toFixed(0) ?? '?'}${windowLabel}\nGreat job showing up today.`
+        scoreBreakdown
       );
     } catch (error) {
       console.error('[Challenge] Submit error:', error);
@@ -1017,6 +1029,7 @@ export default function Challenge() {
               source={require('../../assets/Grounded_logo_removed_background.png')} 
               style={styles.watermarkLogo} 
               resizeMode="contain"
+              onLoad={() => setIsWatermarkLogoLoaded(true)}
             />
             <View style={styles.watermarkTextOverlay}>
               <Text style={styles.watermarkTag}>#GROUNDED</Text>
@@ -1499,7 +1512,6 @@ const styles = StyleSheet.create({
   },
   watermarkCapture: {
     width: width,
-    height: width * 1.33,
     backgroundColor: 'transparent', // Avoid black flash if capture starts early
     position: 'relative',
   },
@@ -1509,10 +1521,10 @@ const styles = StyleSheet.create({
   },
   watermarkLogo: {
     position: 'absolute',
-    bottom: 20,
+    top: 20,
     left: 20,
-    width: 100,
-    height: 40,
+    width: 80,
+    height: 32,
     opacity: 0.9,
   },
   watermarkTextOverlay: {
