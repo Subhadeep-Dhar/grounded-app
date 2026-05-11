@@ -218,10 +218,12 @@ export default function Feed() {
 
   const renderEmpty = () => (
     <View style={styles.emptyContainer}>
-      <Text style={styles.emptyEmoji}>📭</Text>
-      <Text style={styles.emptyTitle}>No Submissions Yet</Text>
+      <View style={styles.emptyIcon}>
+        <ImageOff size={56} color={COLORS.textMuted} />
+      </View>
+      <Text style={styles.emptyTitle}>No submissions yet</Text>
       <Text style={styles.emptyText}>
-        Be the first to complete a challenge today!
+        Complete your first challenge today to see it here.
       </Text>
     </View>
   );
@@ -392,8 +394,9 @@ const styles = StyleSheet.create({
   },
   imageContainer: {
     width: '100%',
-    backgroundColor: 'black',
+    backgroundColor: COLORS.bgElevated,
     position: 'relative',
+    overflow: 'hidden',
   },
   image: {
     width: '100%',
@@ -403,7 +406,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: 12,
     right: 12,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: COLORS.bgOverlay,
     padding: 8,
     borderRadius: RADIUS.round,
   },
@@ -448,11 +451,30 @@ const styles = StyleSheet.create({
     fontWeight: FONT.bold,
     color: COLORS.textPrimary,
   },
+  cardFooter: {
+    padding: SPACING.lg,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    gap: SPACING.md,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+    backgroundColor: COLORS.bgCard,
+  },
   emptyContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: 80,
+    paddingVertical: SPACING.section,
+  },
+  emptyIcon: {
+    width: 88,
+    height: 88,
+    borderRadius: RADIUS.xl,
+    backgroundColor: COLORS.bgElevated,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: SPACING.lg,
   },
   emptyEmoji: {
     fontSize: 56,

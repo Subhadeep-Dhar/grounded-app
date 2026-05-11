@@ -218,13 +218,16 @@ const styles = StyleSheet.create({
   },
   rankContainer: {
     width: 40,
+    height: 40,
+    borderRadius: RADIUS.md,
+    backgroundColor: COLORS.bgElevated,
     alignItems: 'center',
     justifyContent: 'center',
   },
   rankText: {
     fontSize: FONT.md,
-    fontWeight: FONT.bold,
-    color: COLORS.textSecondary,
+    fontWeight: FONT.extrabold,
+    color: COLORS.textPrimary,
   },
   avatar: {
     width: 36,

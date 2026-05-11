@@ -1,5 +1,6 @@
 import { Tabs, Redirect } from 'expo-router';
 import { View, Text, StyleSheet, Platform } from 'react-native';
+import { Home, Target, ClipboardList, Trophy, User } from 'lucide-react-native';
 import { useAuthStore } from '../../src/store/authStore';
 import { COLORS, FONT } from '../../src/constants/theme';
 import { useEffect } from 'react';
@@ -9,12 +10,15 @@ import { doc, getDoc } from 'firebase/firestore';
 import { evaluateRegion } from '../../src/services/region';
 import { pauseNotifications, resumeNotifications } from '../../src/services/notifications';
 
-function TabIcon({ emoji, label, focused }) {
+function TabIcon({ Icon, label, focused }) {
   return (
     <View style={styles.tabItem}>
-      <Text style={[styles.tabEmoji, focused && styles.tabEmojiActive]}>{emoji}</Text>
+      <Icon
+        size={22}
+        color={focused ? COLORS.tabActive : COLORS.tabInactive}
+        strokeWidth={2}
+      />
       <Text style={[styles.tabLabel, focused && styles.tabLabelActive]}>{label}</Text>
-      {focused && <View style={styles.activeIndicator} />}
     </View>
   );
 }
@@ -69,7 +73,7 @@ export default function TabLayout() {
         headerShown: false,
         tabBarStyle: styles.tabBar,
         tabBarShowLabel: false,
-        tabBarActiveTintColor: COLORS.accent,
+        tabBarActiveTintColor: COLORS.tabActive,
         tabBarInactiveTintColor: COLORS.tabInactive,
       }}
     >
@@ -78,7 +82,7 @@ export default function TabLayout() {
         options={{
           title: 'Home',
           tabBarIcon: ({ focused }) => (
-            <TabIcon emoji="🏠" label="Home" focused={focused} />
+            <TabIcon Icon={Home} label="Home" focused={focused} />
           ),
         }}
       />
@@ -87,7 +91,7 @@ export default function TabLayout() {
         options={{
           title: 'Challenge',
           tabBarIcon: ({ focused }) => (
-            <TabIcon emoji="🎯" label="Challenge" focused={focused} />
+            <TabIcon Icon={Target} label="Challenge" focused={focused} />
           ),
         }}
       />
@@ -96,7 +100,7 @@ export default function TabLayout() {
         options={{
           title: 'Feed',
           tabBarIcon: ({ focused }) => (
-            <TabIcon emoji="📋" label="Feed" focused={focused} />
+            <TabIcon Icon={ClipboardList} label="Feed" focused={focused} />
           ),
         }}
       />
@@ -105,7 +109,7 @@ export default function TabLayout() {
         options={{
           title: 'Leaderboard',
           tabBarIcon: ({ focused }) => (
-            <TabIcon emoji="🏆" label="Leaders" focused={focused} />
+            <TabIcon Icon={Trophy} label="Leaders" focused={focused} />
           ),
         }}
       />
@@ -114,7 +118,7 @@ export default function TabLayout() {
         options={{
           title: 'Profile',
           tabBarIcon: ({ focused }) => (
-            <TabIcon emoji="👤" label="Profile" focused={focused} />
+            <TabIcon Icon={User} label="Profile" focused={focused} />
           ),
         }}
       />
@@ -136,30 +140,16 @@ const styles = StyleSheet.create({
   tabItem: {
     alignItems: 'center',
     justifyContent: 'center',
-    minWidth: 60,
-  },
-  tabEmoji: {
-    fontSize: 22,
-    opacity: 0.5,
-  },
-  tabEmojiActive: {
-    opacity: 1,
+    minWidth: 72,
   },
   tabLabel: {
     fontSize: FONT.xs,
     fontWeight: FONT.medium,
     color: COLORS.tabInactive,
-    marginTop: 2,
+    marginTop: 4,
   },
   tabLabelActive: {
     color: COLORS.tabActive,
     fontWeight: FONT.semibold,
-  },
-  activeIndicator: {
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: COLORS.accent,
-    marginTop: 4,
   },
 });

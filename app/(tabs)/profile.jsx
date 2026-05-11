@@ -285,7 +285,7 @@ export default function Profile() {
 
           <Text style={styles.progressText}>
             {earnedCount === BADGES.length
-              ? '🎉 All badges earned!'
+              ? 'All badges earned!'
               : `Earn ${BADGES.length - earnedCount} more to complete your collection`}
           </Text>
         </View>
@@ -322,9 +322,12 @@ export default function Profile() {
       {/* Web Warning */}
       {Platform.OS === 'web' && (
         <View style={styles.webWarning}>
-          <Text style={styles.webWarningText}>
-            ⚠️ Some features are limited on web. Open on mobile for full experience.
-          </Text>
+          <View style={styles.webWarningRow}>
+            <TriangleAlert size={16} color={COLORS.warning} style={{ marginRight: 8 }} />
+            <Text style={styles.webWarningText}>
+              Some features are limited on web. Open on mobile for full experience.
+            </Text>
+          </View>
         </View>
       )}
 
@@ -496,10 +499,12 @@ const styles = StyleSheet.create({
   },
   statCard: {
     flex: 1,
+    minHeight: 150,
     backgroundColor: COLORS.bgCard,
     borderRadius: RADIUS.lg,
     padding: SPACING.xl,
     alignItems: 'center',
+    justifyContent: 'space-between',
     borderWidth: 1,
     borderColor: COLORS.border,
     ...SHADOW.subtle,
@@ -584,10 +589,12 @@ const styles = StyleSheet.create({
   },
   badgeCard: {
     width: '47%',
+    minHeight: 150,
     backgroundColor: COLORS.bgCard,
     borderRadius: RADIUS.lg,
     padding: SPACING.lg,
     alignItems: 'center',
+    justifyContent: 'space-between',
     borderWidth: 1.5,
     borderColor: COLORS.accentBorder,
     ...SHADOW.subtle,
@@ -640,6 +647,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(245, 158, 11, 0.3)',
   },
+  webWarningRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   webWarningText: {
     fontSize: FONT.sm,
     color: COLORS.warning,
@@ -659,22 +671,13 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.lg,
     borderWidth: 1,
     borderColor: 'rgba(239, 68, 68, 0.3)',
+    flexDirection: 'row',
+    justifyContent: 'center',
   },
   logoutButtonText: {
     color: COLORS.error,
     fontSize: FONT.md,
-    fontWeight: FONT.semibold,
-  },
-  logoutButton: {
-    backgroundColor: COLORS.errorBg,
-    borderRadius: RADIUS.md,
-    padding: SPACING.lg,
-    alignItems: 'center',
-    marginBottom: SPACING.lg,
-    borderWidth: 1,
-    borderColor: 'rgba(239, 68, 68, 0.3)',
-    flexDirection: 'row',
-    justifyContent: 'center',
+    fontWeight: FONT.bold,
   },
   version: {
     fontSize: FONT.xs,

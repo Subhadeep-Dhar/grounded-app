@@ -744,9 +744,12 @@ export default function Challenge() {
 
         {isWeb && (
           <View style={styles.webNote}>
-            <Text style={styles.webNoteText}>
-              ⚠️ GPS and camera features require the mobile app.
-            </Text>
+            <View style={styles.webNoteRow}>
+              <TriangleAlert size={16} color={COLORS.warning} style={{ marginRight: 8 }} />
+              <Text style={styles.webNoteText}>
+                GPS and camera features require the mobile app.
+              </Text>
+            </View>
           </View>
         )}
 
@@ -773,7 +776,7 @@ export default function Challenge() {
     <View style={styles.container}>
       {/* Region-paused banner (when inside a session but temporarily outside geofence) */}
       {isRegionLocked && (
-        <View style={[styles.statusBanner, { backgroundColor: COLORS.warningBg, paddingTop: Platform.OS === 'ios' ? 60 : 44, paddingBottom: SPACING.md }]}>
+        <View style={[styles.statusBanner, { backgroundColor: COLORS.warningBg }]}>
           <View style={styles.statusContent}>
             <MapPinOff size={20} color={COLORS.warning} />
             <Text style={[styles.statusTitle, { color: COLORS.warning, marginLeft: SPACING.md, fontSize: FONT.sm }]}>
@@ -803,14 +806,18 @@ export default function Challenge() {
           </View>
           <View style={styles.statusTextContainer}>
             <Text style={styles.statusTitle}>
-              {sessionState === SESSION_STATES.TRAVELING ? 'Navigating...' :
-                isVerificationUnlocked ? 'Verification Unlocked!' :
-                  'Stay Put!'}
+              {sessionState === SESSION_STATES.TRAVELING
+                ? 'Traveling to target'
+                : isVerificationUnlocked
+                  ? 'Verification ready'
+                  : 'Arrived — wait to unlock'}
             </Text>
             <Text style={styles.statusSubtitle}>
-              {sessionState === SESSION_STATES.TRAVELING ? getDistanceText(distance) :
-                isVerificationUnlocked ? 'Take your photo and submit.' :
-                  `${formatTime(stayTimer)} / ${formatTime(STAY_DURATION)}`}
+              {sessionState === SESSION_STATES.TRAVELING
+                ? getDistanceText(distance)
+                : isVerificationUnlocked
+                  ? 'Your photo proof is now active.'
+                  : `${formatTime(stayTimer)} / ${formatTime(STAY_DURATION)} remaining`}
             </Text>
           </View>
         </View>
@@ -831,10 +838,10 @@ export default function Challenge() {
           </View>
           <Text style={styles.progressText}>
             {isVerificationUnlocked
-              ? '✅ Stay complete! Take your photo.'
+              ? 'Stay requirement met — capture your proof.'
               : isInCountdown
                 ? `Hold position — ${remainingSeconds}s remaining`
-                : 'Stay for the required duration'}
+                : 'Stay for the required duration.'}
           </Text>
         </View>
       )}
@@ -1178,15 +1185,17 @@ const styles = StyleSheet.create({
     paddingTop: Platform.OS === 'ios' ? 60 : 44,
     paddingBottom: SPACING.lg,
     paddingHorizontal: SPACING.xl,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
   },
   statusTracking: {
     backgroundColor: COLORS.infoBg,
   },
   statusArrived: {
-    backgroundColor: COLORS.accentGlow,
+    backgroundColor: COLORS.warningBg,
   },
   statusStaying: {
-    backgroundColor: COLORS.warningBg,
+    backgroundColor: COLORS.accentGlow,
   },
   statusContent: {
     flexDirection: 'row',
