@@ -41,8 +41,7 @@ import {
   Eye, EyeOff,
   ArrowUp
 } from 'lucide-react-native';
-import { collection, query, orderBy, limit, getDocs } from 'firebase/firestore';
-import { db } from '../../src/services/db';
+import { getLeaderboard } from '../../src/services/leaderboard';
 import { COLORS, FONT, SPACING, RADIUS, SHADOW } from '../../src/constants/theme';
 
 import { useRouter } from 'expo-router';
@@ -55,18 +54,13 @@ export default function Leaderboard() {
 
   const fetchLeaderboard = useCallback(async () => {
     try {
-      const q = query(
-        collection(db, 'users'),
-        orderBy('trustScore', 'desc'),
-        limit(20)
-      );
-      const snap = await getDocs(q);
-      const data = snap.docs.map((doc, index) => ({
-        id: doc.id,
+      const data = await getLeaderboard();
+      // Service returns sorted data, we just map rank
+      const rankedData = data.map((user, index) => ({
+        ...user,
         rank: index + 1,
-        ...doc.data(),
       }));
-      setUsers(data);
+      setUsers(rankedData);
     } catch (error) {
       console.error('Error fetching leaderboard:', error);
     } finally {

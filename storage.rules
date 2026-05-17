@@ -3,30 +3,61 @@ rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
 
-    // Proof images — users can upload to their own folder, anyone authenticated can read
+    // ── Ephemeral proof images ───────────────────────────────────────────────
+    // Users write to their own folder. Any authenticated user can read (for feed).
+    // Cloud Functions (admin SDK) can delete — no client rule needed for that.
     match /proofs/{userId}/{fileName} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null && request.auth.uid == userId
-        && request.resource.size < 10 * 1024 * 1024  // Max 10MB
-        && request.resource.contentType.matches('image/.*');
+      allow read:  if request.auth != null;
+      allow write: if request.auth != null
+                   && request.auth.uid == userId
+                   && request.resource.size < 10 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*');
     }
 
-    // User avatars
+    // ── Watermarked share images (ephemeral) ─────────────────────────────────
+    match /watermarks/{userId}/{fileName} {
+      allow read:  if request.auth != null;
+      allow write: if request.auth != null
+                   && request.auth.uid == userId
+                   && request.resource.size < 10 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*');
+    }
+
+    // ── Generated share images (ephemeral) ───────────────────────────────────
+    match /shares/{userId}/{fileName} {
+      allow read:  if request.auth != null;
+      allow write: if request.auth != null
+                   && request.auth.uid == userId
+                   && request.resource.size < 10 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*');
+    }
+
+    // ── Temporary upload staging area (ephemeral) ────────────────────────────
+    match /temp/{userId}/{fileName} {
+      allow read:  if request.auth != null && request.auth.uid == userId;
+      allow write: if request.auth != null
+                   && request.auth.uid == userId
+                   && request.resource.size < 10 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*');
+    }
+
+    // ── User avatars (permanent) ─────────────────────────────────────────────
     match /avatars/{userId}/{fileName} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null && request.auth.uid == userId
-        && request.resource.size < 5 * 1024 * 1024
-        && request.resource.contentType.matches('image/.*');
+      allow read:  if request.auth != null;
+      allow write: if request.auth != null
+                   && request.auth.uid == userId
+                   && request.resource.size < 5 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*');
     }
 
-    // Public assets (read-only)
+    // ── Public read-only assets ───────────────────────────────────────────────
     match /assets/{fileName} {
-      allow read: if true;
+      allow read:  if true;
       allow write: if false;
     }
 
-    // Default deny
-    match /{fileName=**} {
+    // ── Default deny ──────────────────────────────────────────────────────────
+    match /{allPaths=**} {
       allow read, write: if false;
     }
   }

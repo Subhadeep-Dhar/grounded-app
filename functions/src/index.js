@@ -1,256 +1,398 @@
+"use strict";
+
 const { onDocumentCreated } = require("firebase-functions/v2/firestore");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
+const { onRequest } = require("firebase-functions/v2/https");
 const admin = require("firebase-admin");
 
 admin.initializeApp();
 const db = admin.firestore();
 
-// Badge definitions
+// ─── Inline config (mirrors src/constants/config.js) ────────────────────────
+const TRUST_MIN = 0;
+const MISSED_DAY_PENALTY = -5;   // per unexcused missed day
+const STREAK_BREAK_PENALTY = -2; // extra one-time penalty for breaking streak
+const PENALTY_CAP = -15;         // most negative a single reconciliation can apply
+const FEED_EXPIRATION_MS = 24 * 60 * 60 * 1000; // 24h
+
+const RECON_PAGE_SIZE = 100; // users per pagination page
+const CLEANUP_LIMIT = 200;   // submissions per cleanup run
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+/**
+ * Convert any Firestore Timestamp / plain number / Date to milliseconds.
+ * Handles admin SDK Timestamp, serialised {seconds,nanoseconds}, and raw numbers.
+ */
+const toMs = (val) => {
+  if (!val) return 0;
+  if (typeof val === "number") return val;
+  if (typeof val.toMillis === "function") return val.toMillis(); // admin Timestamp
+  if (val._seconds) return val._seconds * 1000;
+  if (val.seconds) return val.seconds * 1000;
+  if (val instanceof Date) return val.getTime();
+  return 0;
+};
+
+/**
+ * Missed-day trust penalty. Mirrors client calculateMissedDayPenalty().
+ * Returns a NEGATIVE number capped at PENALTY_CAP.
+ */
+const calcPenalty = (daysMissed) =>
+  Math.max(daysMissed * MISSED_DAY_PENALTY + STREAK_BREAK_PENALTY, PENALTY_CAP);
+
+/**
+ * Safe ephemeral Storage path check.
+ * Only proofs/, watermarks/, shares/, temp/ are ephemeral — never avatars/ or assets/.
+ */
+const isEphemeralPath = (filePath) =>
+  filePath.startsWith("proofs/") ||
+  filePath.startsWith("watermarks/") ||
+  filePath.startsWith("shares/") ||
+  filePath.startsWith("temp/");
+
+/** Extract Storage file path from a download URL. Returns null if unparseable. */
+const extractStoragePath = (url) => {
+  if (!url || typeof url !== "string") return null;
+  const parts = url.split("/o/");
+  if (parts.length < 2) return null;
+  try {
+    return decodeURIComponent(parts[1].split("?")[0]);
+  } catch {
+    return null;
+  }
+};
+
+// ─── Badge definitions (cloud-side mirror) ──────────────────────────────────
 const BADGE_CHECKS = [
-  { id: '3_day_streak', check: (u) => (u.streakCount || 0) >= 3 },
-  { id: '7_day_streak', check: (u) => (u.streakCount || 0) >= 7 },
-  { id: '14_day_streak', check: (u) => (u.streakCount || 0) >= 14 },
-  { id: '5_completions', check: (u) => (u.totalCompletions || 0) >= 5 },
-  { id: '30_completions', check: (u) => (u.totalCompletions || 0) >= 30 },
-  { id: 'high_trust', check: (u) => (u.trustScore || 0) >= 80 },
+  { id: "3_day_streak",   check: (u) => (u.streakCount || 0) >= 3 },
+  { id: "7_day_streak",   check: (u) => (u.streakCount || 0) >= 7 },
+  { id: "14_day_streak",  check: (u) => (u.streakCount || 0) >= 14 },
+  { id: "5_completions",  check: (u) => (u.totalCompletions || 0) >= 5 },
+  { id: "30_completions", check: (u) => (u.totalCompletions || 0) >= 30 },
+  { id: "high_trust",     check: (u) => (u.trustScore || 0) >= 80 },
+  { id: "trusted",        check: (u) => (u.trustScore || 0) >= 60 },
 ];
 
-// ─── Submission Trigger ────────────────────────
+// ─── 1. Submission Trigger ───────────────────────────────────────────────────
 exports.onSubmissionCreate = onDocumentCreated(
-  {
-    document: "submissions/{id}",
-    region: "us-central1",
-  },
+  { document: "submissions/{id}", region: "us-central1" },
   async (event) => {
     const data = event.data.data();
-    const ref = event.data.ref;
+    const ref  = event.data.ref;
 
-    const userRef = db.collection("users").doc(data.userId);
+    const userRef  = db.collection("users").doc(data.userId);
     const userSnap = await userRef.get();
-
     if (!userSnap.exists) {
-      console.error("User not found:", data.userId);
+      console.error("[Submission] User not found:", data.userId);
       return;
     }
 
     const user = userSnap.data();
-
-    // Check and award badges
-    const updatedUser = {
+    const merged = {
       ...user,
-      trustScore: user.trustScore ?? 0,
-      streakCount: user.streakCount ?? 0,
-      totalCompletions: user.totalCompletions ?? 0,
+      trustScore:       user.trustScore       ?? 0,
+      streakCount:      user.streakCount       ?? 0,
+      totalCompletions: user.totalCompletions  ?? 0,
     };
 
-    let badges = user.badges || [];
+    // Award badges
+    const badges = Array.isArray(user.badges) ? [...user.badges] : [];
     for (const badge of BADGE_CHECKS) {
-      if (!badges.includes(badge.id) && badge.check(updatedUser)) {
+      if (!badges.includes(badge.id) && badge.check(merged)) {
         badges.push(badge.id);
-        console.log(`Badge awarded to ${data.userId}: ${badge.id}`);
+        console.log(`[Submission] Badge awarded ${data.userId}: ${badge.id}`);
       }
     }
 
-    // Update user badges
+    // Sync lastReconciliationDate so daily job uses the correct baseline.
     await userRef.update({
       badges,
+      lastReconciliationDate: Date.now(),
     });
 
-    // Update submission with server-side validation
     await ref.update({
-      processedAt: admin.firestore.FieldValue.serverTimestamp(),
+      processedAt:     admin.firestore.FieldValue.serverTimestamp(),
       serverValidated: true,
     });
 
-    console.log("Processed submission:", ref.id, "Status:", data.status);
+    console.log("[Submission] Processed:", ref.id, "status:", data.status);
   }
 );
 
-// ─── Scheduled Job: Miss Detection (7:30 AM IST daily) ────
-exports.markMissedUsers = onSchedule(
+// ─── 2. Daily Trust & Streak Reconciliation (2:00 AM IST) ───────────────────
+// Processes ALL users via cursor pagination so no user is missed.
+// Applies missed-day penalty and streak reset for inactive users.
+// Respects regionStatus === 'outside' (same as client reconciliation.js).
+exports.dailyTrustReconciliation = onSchedule(
   {
-    schedule: "30 7 * * *",
+    schedule: "0 2 * * *",
     timeZone: "Asia/Kolkata",
-  },
-  async () => {
-    const today = new Date().toDateString();
-    const usersSnap = await db.collection("users").get();
-
-    let missedCount = 0;
-
-    for (const doc of usersSnap.docs) {
-      const user = doc.data();
-
-      // Skip if already completed or already marked missed today
-      if (user.lastCompletedDate === today) continue;
-      if (user.lastMissedDate === today) continue;
-
-      // Mark as missed
-      const updates = {
-        lastMissedDate: today,
-        canRecover: true,
-      };
-
-      // Reset streak if they missed (but allow recovery)
-      if (user.streakCount > 0) {
-        // Don't reset yet — recovery window allows next day
-        updates.missWarning = true;
-      }
-
-      await db.collection("users").doc(doc.id).update(updates);
-      missedCount++;
-      console.log(`User missed: ${doc.id}`);
-    }
-
-    console.log(`Miss detection completed. ${missedCount} users missed.`);
-  }
-);
-
-// ─── Scheduled Job: Cleanup (Every 12 hours) ────
-// Safeguards storage costs and privacy by removing ephemeral verification content.
-exports.cleanupOldSubmissions = onSchedule(
-  {
-    schedule: "0 */12 * * *", 
-    timeZone: "Asia/Kolkata",
-    memory: "256MiB", // Lightweight
+    memory: "512MiB",
+    timeoutSeconds: 300,
   },
   async () => {
     const now = Date.now();
-    const RETENTION_MS = 24 * 60 * 60 * 1000;
-    const CLEANUP_LIMIT = 200;
-    
-    // 1. Fetch expired submissions using expiresAt (Primary) or legacy timestamp (Fallback)
-    let subSnap = await db.collection("submissions")
-      .where("expiresAt", "<", now)
-      .limit(CLEANUP_LIMIT)
-      .get();
-      
-    if (subSnap.empty) {
-      const legacyCutoff = now - RETENTION_MS;
-      subSnap = await db.collection("submissions")
-        .where("timestamp", "<", legacyCutoff)
-        .limit(CLEANUP_LIMIT)
-        .get();
+
+    // Midnight of today in local time (IST computation is fine here —
+    // what matters is the day boundary relative to wall-clock IST).
+    const todayMidnight = new Date(now);
+    todayMidnight.setHours(0, 0, 0, 0);
+    const todayMidnightMs = todayMidnight.getTime();
+
+    console.log(`[Reconciliation] Starting at ${new Date(now).toISOString()}`);
+
+    let lastDoc = null;
+    let totalProcessed = 0;
+    let totalUpdated = 0;
+    let batchCount = 0;
+
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      let q = db.collection("users").orderBy("__name__").limit(RECON_PAGE_SIZE);
+      if (lastDoc) q = q.startAfter(lastDoc);
+
+      const snap = await q.get();
+      if (snap.empty) break;
+
+      // Use WriteBatch (max 500 ops); our batch is ≤100 docs so always safe.
+      const batch = db.batch();
+      let batchHasWrites = false;
+
+      for (const userDoc of snap.docs) {
+        const user = userDoc.data();
+
+        // Determine the latest known "good" point for this user.
+        // Use whichever is more recent: lastReconciliationDate or lastSubmissionDate.
+        const lastReconMs = Math.max(
+          toMs(user.lastReconciliationDate),
+          toMs(user.lastSubmissionDate)
+        );
+        // Fall back to account creation date if neither exists.
+        const baselineMs = lastReconMs || toMs(user.createdAt) || 0;
+
+        const baselineMidnight = new Date(baselineMs);
+        baselineMidnight.setHours(0, 0, 0, 0);
+
+        const daysSince = Math.floor(
+          (todayMidnightMs - baselineMidnight.getTime()) / 86400000
+        );
+
+        // Already reconciled today — skip.
+        if (daysSince <= 0) {
+          totalProcessed++;
+          continue;
+        }
+
+        // daysSince = 1 → last seen yesterday, today not over → no penalty yet.
+        const missedPastDays = daysSince - 1;
+
+        if (missedPastDays <= 0) {
+          // Update timestamp so next run sees today as baseline.
+          batch.update(userDoc.ref, { lastReconciliationDate: now });
+          batchHasWrites = true;
+          totalProcessed++;
+          continue;
+        }
+
+        // Region-excluded users: freeze progression, no penalty.
+        if (user.regionStatus === "outside") {
+          batch.update(userDoc.ref, { lastReconciliationDate: now });
+          batchHasWrites = true;
+          totalProcessed++;
+          continue;
+        }
+
+        // Apply penalty for unexcused missed days.
+        const penalty = calcPenalty(missedPastDays);
+        const currentTrust = typeof user.trustScore === "number" ? user.trustScore : 0;
+        const newTrust = Math.max(TRUST_MIN, currentTrust + penalty);
+
+        batch.update(userDoc.ref, {
+          trustScore:              newTrust,
+          streakCount:             0,
+          lastReconciliationDate:  now,
+          lastMissedPenaltyAt:     now,
+          lastMissedDays:          missedPastDays,
+        });
+        batchHasWrites = true;
+        totalUpdated++;
+
+        console.log(
+          `[Reconciliation] ${userDoc.id}: trust ${currentTrust}→${newTrust}` +
+          ` | missed ${missedPastDays}d | penalty ${penalty}`
+        );
+
+        totalProcessed++;
+      }
+
+      if (batchHasWrites) {
+        await batch.commit();
+        batchCount++;
+      }
+
+      lastDoc = snap.docs[snap.docs.length - 1];
+      if (snap.size < RECON_PAGE_SIZE) break; // last page
     }
 
-    if (subSnap.empty) {
+    console.log(
+      `[Reconciliation] Done. Batches: ${batchCount}, ` +
+      `Processed: ${totalProcessed}, Updated: ${totalUpdated}`
+    );
+  }
+);
+
+// ─── 3. Storage & Firestore Cleanup (Every 12 hours) ────────────────────────
+// Deletes expired submissions from Firestore + their proof images from Storage.
+// Runs BOTH expiresAt and legacy timestamp queries so no old doc is missed.
+exports.cleanupOldSubmissions = onSchedule(
+  {
+    schedule: "0 */12 * * *",
+    timeZone: "Asia/Kolkata",
+    memory: "512MiB",
+    timeoutSeconds: 300,
+  },
+  async () => {
+    const now = Date.now();
+    const legacyCutoff = now - FEED_EXPIRATION_MS;
+    const bucket = admin.storage().bucket();
+
+    // ── Query 1: docs with expiresAt field that has expired ──────────────────
+    const q1 = db.collection("submissions")
+      .where("expiresAt", "<", now)
+      .limit(CLEANUP_LIMIT);
+
+    // ── Query 2: legacy docs (no expiresAt) older than retention period ──────
+    const q2 = db.collection("submissions")
+      .where("timestamp", "<", legacyCutoff)
+      .limit(CLEANUP_LIMIT);
+
+    const [snap1, snap2] = await Promise.all([q1.get(), q2.get()]);
+
+    // Deduplicate by document ID so we don't process the same doc twice.
+    const docMap = new Map();
+    snap1.docs.forEach((d) => docMap.set(d.id, d));
+    snap2.docs.forEach((d) => docMap.set(d.id, d));
+
+    if (docMap.size === 0) {
       console.log("[Cleanup] No expired submissions found.");
       return;
     }
 
-    console.log(`[Cleanup] Found ${subSnap.size} expired candidates. Starting removal...`);
+    console.log(`[Cleanup] Found ${docMap.size} expired candidates.`);
 
-    const storage = admin.storage().bucket();
-    let deletedCount = 0;
-    let skippedCount = 0;
-    let failedCount = 0;
+    let deletedDocs = 0;
+    let deletedFiles = 0;
+    let skipped = 0;
+    let failed = 0;
 
-    for (const doc of subSnap.docs) {
-      const data = doc.data();
+    // Use WriteBatch for Firestore deletes (commit every 400 to stay under 500 limit).
+    const BATCH_FLUSH = 400;
+    let batch = db.batch();
+    let batchOps = 0;
 
-      // Safeguard: Ensure we don't delete very recent/active uploads 
-      const age = now - (data.timestamp || 0);
-      if (age < 3600000 && !data.expiresAt) {
-        skippedCount++;
+    for (const [, docSnap] of docMap) {
+      const data = docSnap.data();
+
+      // Safeguard: skip anything created in the last hour that has no expiresAt
+      // (could be an in-flight upload race condition).
+      const ageMs = now - (toMs(data.timestamp) || 0);
+      if (ageMs < 3_600_000 && !data.expiresAt) {
+        skipped++;
         continue;
       }
 
       try {
-        // 1. Delete image from Storage if it exists
+        // 1. Delete Storage file (ephemeral paths only).
         if (data.mediaUrl) {
-          const urlParts = data.mediaUrl.split('/o/');
-          if (urlParts.length > 1) {
-            const filePathWithParams = urlParts[1].split('?')[0];
-            const filePath = decodeURIComponent(filePathWithParams);
-            
-            // Safety check: ONLY delete from ephemeral folders (proofs/)
-            // Never touch profile/ or permanent/ assets
-            if (filePath.startsWith('proofs/')) {
-              await storage.file(filePath).delete().catch(e => {
-                if (e.code !== 404) console.warn(`[Cleanup] Storage skip for ${filePath}:`, e.message);
-              });
-            } else {
-              console.log(`[Cleanup] Safeguard: Skipping non-ephemeral path: ${filePath}`);
-            }
+          const filePath = extractStoragePath(data.mediaUrl);
+          if (filePath && isEphemeralPath(filePath)) {
+            await bucket.file(filePath).delete().catch((e) => {
+              if (e.code !== 404) {
+                console.warn(`[Cleanup] Storage delete skip ${filePath}:`, e.message);
+              }
+            });
+            deletedFiles++;
+          } else if (filePath) {
+            console.log(`[Cleanup] Safeguard: skipping non-ephemeral path: ${filePath}`);
           }
         }
 
-        // 2. Delete Firestore document
-        await doc.ref.delete();
-        deletedCount++;
-      } catch (error) {
-        failedCount++;
-        console.error(`[Cleanup] Error processing ${doc.id}:`, error);
+        // 2. Queue Firestore doc deletion.
+        batch.delete(docSnap.ref);
+        batchOps++;
+        deletedDocs++;
+
+        // Flush batch if approaching limit.
+        if (batchOps >= BATCH_FLUSH) {
+          await batch.commit();
+          batch = db.batch();
+          batchOps = 0;
+        }
+      } catch (err) {
+        failed++;
+        console.error(`[Cleanup] Error on ${docSnap.id}:`, err.message);
       }
     }
 
-    console.log(`[Cleanup] Finished. Deleted: ${deletedCount}, Skipped: ${skippedCount}, Failed: ${failedCount}`);
+    // Commit remaining.
+    if (batchOps > 0) await batch.commit();
+
+    console.log(
+      `[Cleanup] Done. Docs deleted: ${deletedDocs}, ` +
+      `Files deleted: ${deletedFiles}, Skipped: ${skipped}, Failed: ${failed}`
+    );
   }
 );
 
-// ─── Scheduled Job: Daily Trust Reconciliation (2 AM IST) ────
-// Ensures inactive users' trust scores decay automatically
-exports.dailyTrustReconciliation = onSchedule(
-  {
-    schedule: "0 2 * * *", // 2 AM IST daily
-    timeZone: "Asia/Kolkata",
-    memory: "256MiB", // Lightweight
-  },
-  async () => {
-    const now = Date.now();
-    const RECONCILIATION_LIMIT = 100; // Process in batches to avoid timeouts
-    
-    console.log(`[Daily Reconciliation] Starting trust reconciliation at ${new Date(now).toISOString()}`);
-    
-    // Get users who haven't been active recently (no reconciliation in last 48 hours)
-    const cutoffTime = now - (48 * 60 * 60 * 1000);
-    const usersSnap = await db.collection("users")
-      .where("lastReconciliationDate", "<", cutoffTime)
-      .limit(RECONCILIATION_LIMIT)
-      .get();
-    
-    if (usersSnap.empty) {
-      console.log(`[Daily Reconciliation] No users need reconciliation.`);
+// ─── 4. One-time Backfill: Fix stale trustScore=50 users ────────────────────
+// Invoke via: firebase functions:shell → backfillStaleUsers({})
+// Or deploy and call via HTTP once. Safe to call multiple times (idempotent).
+exports.backfillStaleUsers = onRequest(
+  { region: "us-central1", memory: "512MiB", timeoutSeconds: 300 },
+  async (req, res) => {
+    // Minimal auth check — only allow POST with a secret header.
+    const secret = req.headers["x-admin-secret"];
+    if (!secret || secret !== process.env.ADMIN_SECRET) {
+      res.status(403).send("Forbidden");
       return;
     }
-    
-    console.log(`[Daily Reconciliation] Processing ${usersSnap.size} inactive users.`);
-    
-    let processedCount = 0;
-    let updatedCount = 0;
-    
-    for (const doc of usersSnap.docs) {
-      try {
-        const userData = doc.data();
-        
-        // Simple trust decay: reduce by 1 point per day inactive (max 5 points)
-        const lastReconciliation = userData.lastReconciliationDate || userData.createdAt || 0;
-        const daysSinceReconciliation = Math.floor((now - lastReconciliation) / (24 * 60 * 60 * 1000));
-        
-        if (daysSinceReconciliation > 0) {
-          const decayAmount = Math.min(daysSinceReconciliation, 5); // Cap at 5 points
-          const newTrustScore = Math.max(0, (userData.trustScore || 0) - decayAmount);
-          
-          await db.collection("users").doc(doc.id).update({
-            trustScore: newTrustScore,
-            lastReconciliationDate: now,
-          });
-          
-          updatedCount++;
-          console.log(`[Daily Reconciliation] Updated ${doc.id}: trust ${userData.trustScore} → ${newTrustScore}`);
-        } else {
-          // Just update the reconciliation timestamp
-          await db.collection("users").doc(doc.id).update({
-            lastReconciliationDate: now,
-          });
-        }
-        
-        processedCount++;
-      } catch (error) {
-        console.error(`[Daily Reconciliation] Error processing ${doc.id}:`, error);
+
+    const now = Date.now();
+
+    // Find users with the old default trustScore of 50
+    // (the old architecture initialised trust at 50; new is 0).
+    // We reset them to 0 ONLY if they have no submissions (totalCompletions === 0).
+    // Users who actually earned their score are left untouched.
+    const staleSnap = await db.collection("users")
+      .where("trustScore", "==", 50)
+      .get();
+
+    let reset = 0;
+    let kept = 0;
+    const batch = db.batch();
+
+    for (const doc of staleSnap.docs) {
+      const user = doc.data();
+      if ((user.totalCompletions || 0) === 0) {
+        // Stale default — reset to 0
+        batch.update(doc.ref, {
+          trustScore: 0,
+          streakCount: 0,
+          lastReconciliationDate: now,
+        });
+        reset++;
+      } else {
+        // User earned their score — just stamp reconciliation date
+        batch.update(doc.ref, { lastReconciliationDate: now });
+        kept++;
       }
     }
-    
-    console.log(`[Daily Reconciliation] Completed. Processed: ${processedCount}, Updated: ${updatedCount}`);
+
+    await batch.commit();
+
+    const msg = `Backfill done. Reset: ${reset}, Kept as-is: ${kept}`;
+    console.log("[Backfill]", msg);
+    res.status(200).send(msg);
   }
 );
